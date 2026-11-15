@@ -46,7 +46,13 @@ export function useEntityMeta(entity: string) {
   return useQuery({ queryKey: ["meta", entity], queryFn: () => api.get<EntityMeta>(`/api/meta/${entity}/fields`), staleTime: 300_000 });
 }
 
+// Columns, filters, paging and the "last state" autosave all live in component state, so the table
+// must remount whenever it starts showing a different entity / view (e.g. Bločky → Prijaté faktúry).
 export function DataTable(props: DataTableProps) {
+  return <DataTableInner key={props.viewKey ?? props.entity} {...props} />;
+}
+
+function DataTableInner(props: DataTableProps) {
   const { entity, fixedFilters = [], toolbar, initial } = props;
   const vk = props.viewKey ?? entity;
   const meta = useEntityMeta(entity);

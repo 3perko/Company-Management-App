@@ -3,7 +3,15 @@ import { DataTable } from "@/components/DataTable";
 import { PageHeader } from "@/components/ui";
 import { useEntityMeta } from "@/components/DataTable";
 
-export function EntityListPage({ entity, title, sub, extra }: { entity: string; title?: string; sub?: string; extra?: string }) {
+type EntityListPageProps = { entity: string; title?: string; sub?: string; extra?: string };
+
+// React Router keeps the same component instance when two routes render the same component type,
+// so the page is keyed by entity: navigating Vozidlá → Sadzby must start with fresh state.
+export function EntityListPage(props: EntityListPageProps) {
+  return <EntityListPageInner key={props.entity} {...props} />;
+}
+
+function EntityListPageInner({ entity, title, sub, extra }: EntityListPageProps) {
   const meta = useEntityMeta(entity);
   const [tab, setTab] = useState(entity);
   const extraMeta = useEntityMeta(extra ?? entity);
