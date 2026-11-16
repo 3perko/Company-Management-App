@@ -437,6 +437,27 @@ def before_delete(ctx, doc: Document) -> None:
         raise HTTPException(409, "Doklad je vyfakturovaný v uzavretom podklade a nedá sa vymazať.")
     for d in ctx.db.query(Document).filter(Document.duplicate_of_id == doc.id):
         d.duplicate_of_id = None
+    release_source_files(ctx.db, doc)
+
+
+FILE_RELEASED_INFO = "Doklad bol vymazaný – súbor sa dá spracovať znova."
+
+
+def release_source_files(db: Session, doc: Document) -> None:
+    """The document is being deleted: its source files must not stay "processed", otherwise the same file
+    (same hash) could never be ingested again. They become "skipped" and can be uploaded / reprocessed again."""
+    attached = [r.source_file_id for r in db.query(DocumentSource).filter(DocumentSource.document_id == doc.id)]
+    files = db.query(SourceFile).filter(SourceFile.company_id == doc.company_id,
+                                        (SourceFile.document_id == doc.id) | SourceFile.id.in_(attached))
+    for sf in files:
+        other = (db.query(DocumentSource).filter(DocumentSource.source_file_id == sf.id,
+                                                 DocumentSource.document_id != doc.id).first())
+        if other:  # the same file is also attached to another document -> keep it there
+            sf.document_id = other.document_id
+            continue
+        sf.document_id = None
+        sf.status = "skipped"
+        sf.error = FILE_RELEASED_INFO
 
 
 def create_manual(ctx, doc_type: str) -> Document:

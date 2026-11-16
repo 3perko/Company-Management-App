@@ -133,6 +133,60 @@ def test_inbox_qr_ekasa_duplicate_and_physical(admin, project, monkeypatch):
     assert q["found"] is True and q["document_id"] == res["document_id"]
 
 
+def test_reupload_after_document_delete(admin, monkeypatch):
+    from app.services import ekasa
+    monkeypatch.setattr(ekasa, "fetch_receipt", lambda rid, client=None: EKASA_RECEIPT)
+    img = qr_png(RID)
+
+    def upload():
+        return admin.post("/api/inbox/upload", data={"kind": "receipt"},
+                          files=[("files", ("blocek.png", img, "image/png"))]).json()
+
+    def file_row():
+        return admin.get("/api/data/source_files", params={"columns": "status,document_id"}).json()["rows"][0]
+
+    first = upload()["results"][0]
+    assert first["status"] == "processed"
+    # same file while the document exists -> nothing happens, the upload points to the existing document
+    again = upload()
+    assert again["results"] == [] and again["stored"][0]["requeued"] is False
+    assert again["stored"][0]["document_id"] == first["document_id"]
+    # deleting the document releases its file ...
+    assert admin.delete(f"/api/data/documents/{first['document_id']}").status_code == 200
+    assert admin.get("/api/data/documents").json()["total"] == 0
+    row = file_row()
+    assert row["status"] == "skipped" and row["document_id"] is None
+    # ... so the very same file can be uploaded again and creates a new document
+    back = upload()
+    assert back["stored"][0]["new"] is False and back["stored"][0]["requeued"] is True
+    res = back["results"][0]
+    assert res["status"] == "processed" and res["document_id"] != first["document_id"]
+    doc = admin.get(f"/api/documents/{res['document_id']}/full").json()
+    assert doc["ekasa_id"] == RID and len(doc["files"]) == 1
+    assert admin.get("/api/data/documents").json()["total"] == 1
+    assert admin.get("/api/data/source_files").json()["total"] == 1  # file stored once
+    row = file_row()
+    assert row["status"] == "processed" and row["document_id"] == res["document_id"]
+
+
+def test_delete_keeps_file_attached_to_another_document(admin):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 300), "white").save(buf, format="JPEG")
+    scan = ("sken.jpg", buf.getvalue(), "image/jpeg")
+    a = admin.post("/api/documents/manual", json={"doc_type": "receipt"}).json()["id"]
+    b = admin.post("/api/documents/manual", json={"doc_type": "receipt"}).json()["id"]
+    for d in (a, b):
+        assert admin.post(f"/api/documents/{d}/files", files={"file": scan}).status_code == 200
+    assert admin.delete(f"/api/data/documents/{b}").status_code == 200
+    row = admin.get("/api/data/source_files", params={"columns": "status,document_id"}).json()["rows"][0]
+    assert row["status"] == "processed" and row["document_id"] == a
+    # still attached to document A -> uploading it again must not create another document
+    r = admin.post("/api/inbox/upload", files=[("files", scan)]).json()
+    assert r["results"] == [] and r["stored"][0]["requeued"] is False
+    assert admin.get("/api/data/documents").json()["total"] == 1
+
+
 def test_inbox_without_extraction_goes_to_review(admin, monkeypatch):
     from PIL import Image
     buf = io.BytesIO()

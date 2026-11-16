@@ -460,6 +460,31 @@ def process_pending(db: Session, company_id: int, limit: int = 200) -> list[dict
     return results
 
 
+def requeue_if_orphaned(db: Session, sf: SourceFile, *, kind_hint: str, physical: bool, note: str | None,
+                        user_id: int | None) -> bool:
+    """A file with the same hash was uploaded again by hand. If the stored file no longer leads to any document
+    (its document was deleted, or processing failed), queue it for processing again instead of ignoring the upload."""
+    if sf.status == "new":
+        return False
+    if db.query(DocumentSource).filter(DocumentSource.source_file_id == sf.id).first():
+        return False
+    if sf.document_id is not None and db.get(Document, sf.document_id):
+        return False
+    # "processed" without a document is a bank statement etc. – those are not documents and stay as they are
+    orphaned = sf.status in ("skipped", "error") or (sf.status in ("processed", "duplicate") and sf.document_id is not None)
+    if not orphaned:
+        return False
+    sf.status = "new"
+    sf.document_id = None
+    sf.error = None
+    sf.processed_at = None
+    sf.kind_hint = kind_hint
+    sf.physical = physical
+    sf.note = note or sf.note
+    sf.uploaded_by = user_id
+    return True
+
+
 def reprocess(ctx, ids: list[int]) -> dict:
     n = 0
     for i in ids:
