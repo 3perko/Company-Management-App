@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileDown, Lock, Trash2, Unlock } from "lucide-react";
 import { api, linkUrl } from "@/lib/api";
@@ -7,7 +7,7 @@ import { fmtDate, fmtMoney, fmtNum, monthRange } from "@/lib/format";
 import { DataTable } from "@/components/DataTable";
 import { PeriodPicker, type Period } from "@/components/PeriodPicker";
 import { RefSelect } from "@/components/inputs";
-import { Badge, Card, Empty, PageHeader, Spinner, Stat, useToast } from "@/components/ui";
+import { Badge, Card, Empty, MenuButton, PageHeader, Spinner, Stat, useConfirm, useToast } from "@/components/ui";
 
 interface BLine { id?: number; line_type: string; date: string; description: string | null; worker_name?: string | null;
   quantity: number; unit: string; rate: number | null; markup_pct: number | null; amount: number }
@@ -20,7 +20,8 @@ interface Statement extends Preview {
 const TYPE: Record<string, string> = { hours: "Práca", material: "Materiál", transport: "Doprava", other: "Iné" };
 
 export function BillingList() {
-  const [project, setProject] = useState<number | null>(null);
+  const [sp] = useSearchParams();
+  const [project, setProject] = useState<number | null>(Number(sp.get("zakazka")) || null);
   const [period, setPeriod] = useState<Period>(() => {
     const [f, t] = monthRange(0);
     return { from: f, to: t };
@@ -36,15 +37,15 @@ export function BillingList() {
   const create = async () => {
     try {
       const st = await api.post<Statement>("/api/billing", { project_id: project, date_from: period.from, date_to: period.to, group_by: groupBy });
-      nav(`/vystupy/fakturacia/${st.id}`);
+      nav(`/podklad/${st.id}`);
     } catch (e) {
       toast.error(e);
     }
   };
   return (
     <div className="space-y-4">
-      <PageHeader title="Podklad k fakturácii" sub="Nevyfakturované fakturovateľné hodiny, materiál (s prirážkou) a doprava zákazky za obdobie. Uzavretím sa položky označia ako vyfakturované." />
-      <Card title="Nový podklad">
+      <PageHeader title="Fakturácia" sub="Podklad zhrnie nevyfakturované hodiny, materiál (s prirážkou) a dopravu zákazky za obdobie. Po uzavretí sa tieto položky označia ako vyfakturované." />
+      <Card title="Nový podklad k fakturácii">
         <div className="flex flex-wrap items-end gap-4">
           <div className="w-64"><label className="label">Zákazka</label><RefSelect entity="projects" value={project} onChange={setProject} /></div>
           <PeriodPicker value={period} onChange={setPeriod} allowAll={false} />
@@ -101,6 +102,7 @@ export function BillingDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const nav = useNavigate();
   const q = useQuery({ queryKey: ["billing", id], queryFn: () => api.get<Statement>(`/api/billing/${id}`) });
   const [inv, setInv] = useState<number | null>(null);
@@ -119,20 +121,19 @@ export function BillingDetail() {
   const draft = s.status === "draft";
   return (
     <div className="space-y-4">
-      <Link to="/vystupy/fakturacia" className="link inline-flex items-center gap-1 text-sm"><ArrowLeft className="h-3 w-3" /> Späť</Link>
+      <Link to="/financie/fakturacia" className="link inline-flex items-center gap-1 text-sm"><ArrowLeft className="h-3 w-3" /> Späť na fakturáciu</Link>
       <PageHeader title={<span className="flex items-center gap-2">Podklad č. {s.id} – {s.project_name} <Badge color={draft ? "amber" : "green"}>{draft ? "návrh" : "uzavretý"}</Badge></span>}
         sub={`Obdobie ${fmtDate(s.period_from)} – ${fmtDate(s.period_to)}${s.customer ? ` · odberateľ ${s.customer.name}` : ""}`}
         actions={<>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "pdf" })} target="_blank" rel="noreferrer"><FileDown className="h-4 w-4" /> PDF</a>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "xlsx" })}><FileDown className="h-4 w-4" /> XLSX</a>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "csv" })}>CSV</a>
+          <MenuButton label="Stiahnuť" icon={<FileDown className="h-4 w-4" />} items={(["pdf", "xlsx", "csv"] as const).map((f) => ({
+            label: f.toUpperCase(), onClick: () => window.open(linkUrl(`/api/billing/${s.id}/export`, { format: f }), f === "pdf" ? "_blank" : "_self") }))} />
           {draft ? <>
             <button className="btn-ghost text-red-600" onClick={async () => {
-              if (!confirm("Vymazať návrh podkladu?")) return;
-              try { await api.del(`/api/data/billing_statements/${s.id}`); nav("/vystupy/fakturacia"); } catch (e) { toast.error(e); }
-            }}><Trash2 className="h-4 w-4" /></button>
-            <button className="btn-primary" onClick={() => act(() => api.post(`/api/billing/${s.id}/close`), "Podklad uzavretý – položky sú označené ako vyfakturované")}><Lock className="h-4 w-4" /> Uzavrieť</button>
-          </> : <button className="btn-secondary" onClick={() => act(() => api.post(`/api/billing/${s.id}/reopen`), "Podklad otvorený")}><Unlock className="h-4 w-4" /> Otvoriť</button>}
+              if (!(await confirm("Vymazať návrh podkladu?", "Vymazať"))) return;
+              try { await api.del(`/api/data/billing_statements/${s.id}`); nav("/financie/fakturacia"); } catch (e) { toast.error(e); }
+            }}><Trash2 className="h-4 w-4" /> Vymazať návrh</button>
+            <button className="btn-primary" onClick={() => act(() => api.post(`/api/billing/${s.id}/close`), "Podklad uzavretý – položky sú označené ako vyfakturované")}><Lock className="h-4 w-4" /> Uzavrieť podklad</button>
+          </> : <button className="btn-secondary" onClick={() => act(() => api.post(`/api/billing/${s.id}/reopen`), "Podklad otvorený")}><Unlock className="h-4 w-4" /> Znova otvoriť</button>}
         </>} />
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Bez DPH" value={fmtMoney(s.total_net)} />
@@ -145,7 +146,7 @@ export function BillingDetail() {
       </Card>
       <Card title="Väzba na vystavenú faktúru">
         {s.invoice ? (
-          <p className="text-sm">Faktúra <Link className="link" to={`/doklady/${s.invoice.id}`}>{s.invoice.number ?? `#${s.invoice.id}`}</Link> ({fmtMoney(s.invoice.total_gross)}){" "}
+          <p className="text-sm">Faktúra <Link className="link" to={`/doklad/${s.invoice.id}`}>{s.invoice.number ?? `#${s.invoice.id}`}</Link> ({fmtMoney(s.invoice.total_gross)}){" "}
             <button className="link ml-2 text-xs" onClick={() => act(() => api.post(`/api/billing/${s.id}/invoice`, { document_id: null }), "Väzba zrušená")}>zrušiť väzbu</button></p>
         ) : (
           <div className="flex items-end gap-2">

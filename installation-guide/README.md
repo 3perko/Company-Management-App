@@ -189,7 +189,7 @@ Na konci má byť **`VÝSLEDOK: OK`**. Upozornenia (POZOR) na chýbajúce Claude
 
 Otvorte prehliadač na **http://localhost:8000** a prihláste sa.
 
-**Prvé kroky v aplikácii:** založte firmu (*Číselníky → Firmy*), zákazky, pracovníkov so sadzbami, vozidlá a používateľov pre pracovníkov. Podrobne je to v [hlavnom README](../README.md#3-prvé-kroky-v-aplikácii). Ak si chcete aplikáciu najprv vyskúšať na ukážkových dátach (vytvoria sa samostatné firmy „Demo …“):
+**Prvé kroky v aplikácii:** založte firmu (*Nastavenie → Firmy*), zákazky, pracovníkov so sadzbami, vozidlá a používateľov pre pracovníkov. Podrobne je to v [hlavnom README](../README.md#3-prvé-kroky-v-aplikácii). Ak si chcete aplikáciu najprv vyskúšať na ukážkových dátach (vytvoria sa samostatné firmy „Demo …“):
 
 ```bash
 docker compose exec app python -m app.cli seed-demo
@@ -264,7 +264,7 @@ Od tejto chvíle spúšťajte a aktualizujte aplikáciu vždy s oboma súbormi (
 
 ## 7. Integrácie
 
-Po každej zmene `.env` reštartujte aplikáciu: `docker compose up -d` (pri ceste B s oboma `-f` súbormi). Stav integrácií vidíte v aplikácii v *Nastavenia → Integrácie*.
+Po každej zmene `.env` reštartujte aplikáciu: `docker compose up -d` (pri ceste B s oboma `-f` súbormi). Stav integrácií vidíte v aplikácii v *Nastavenie → Prepojenia*.
 
 ### 7.1 Claude API (čítanie bločkov a faktúr)
 1. Na <https://platform.claude.com> si vytvorte účet, nastavte platobnú metódu a v *API Keys* vytvorte kľúč.
@@ -282,15 +282,15 @@ Bločky sa najprv čítajú z eKasy podľa QR kódu (zadarmo) a Claude sa volá,
      `http://localhost:8000/api/integrations/google/callback` (cesta A, pripájate z počítača so serverom) alebo
      `https://naklady.firma.sk/api/integrations/google/callback` (cesty B a C).
 5. Client ID a Client secret vložte do `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) a reštartujte aplikáciu.
-6. V aplikácii otvorte *Nastavenia → Integrácie → Pripojiť Google účet* a povoľte prístup.
-7. V Google Drive vytvorte pre každú firmu priečinky **na spracovanie**, **spracované** a **banka**. ID priečinka (časť adresy za `/folders/`) a e-mailové tagy (napr. `firma1-faktury`) zadajte v *Číselníky → Firmy*.
+6. V aplikácii otvorte *Nastavenie → Prepojenia → Pripojiť Google účet* a povoľte prístup.
+7. V Google Drive vytvorte pre každú firmu priečinky **na spracovanie**, **spracované** a **banka**. ID priečinka (časť adresy za `/folders/`) a e-mailové tagy (napr. `firma1-faktury`) zadajte v *Nastavenie → Firmy*.
 
 > **Dôležité:** kým je aplikácia v Google v stave **Testing**, pripojenie po 7 dňoch vyprší. Po overení, že všetko funguje, kliknite v *OAuth consent screen* na **Publish app** (stav „In production“). Pri vlastnom použití Google zobrazí varovanie „neoverená aplikácia“; potvrdíte ho cez *Rozšírené → Pokračovať*.
 
 Google nepovoľuje presmerovanie na IP adresy (`http://192.168…`). Pri ceste A preto Google pripájajte v prehliadači priamo na serveri cez `http://localhost:8000`.
 
 ### 7.3 eKasa
-Netreba nič nastavovať. Test nájdete v *Nastavenia → Integrácie* (zadáte ID bločku `O-…`).
+Netreba nič nastavovať. Test nájdete v *Nastavenie → Prepojenia* (zadáte ID bločku `O-…`).
 
 ---
 

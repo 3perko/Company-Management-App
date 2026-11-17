@@ -44,7 +44,7 @@ export default function Vat() {
                   <thead><tr><th className="th">Dátum</th><th className="th">Doklad</th><th className="th">Partner</th><th className="th">IČ DPH</th><th className="th">Stav</th><th className="th text-right">Základ</th><th className="th text-right">DPH</th><th className="th text-right">Spolu</th></tr></thead>
                   <tbody>{d.documents[side].map((x) => (
                     <tr key={x.id}>
-                      <td className="td">{fmtDate(x.date)}</td><td className="td"><Link className="link" to={`/doklady/${x.id}`}>{x.number ?? `#${x.id}`}</Link></td>
+                      <td className="td">{fmtDate(x.date)}</td><td className="td"><Link className="link" to={`/doklad/${x.id}`}>{x.number ?? `#${x.id}`}</Link></td>
                       <td className="td">{x.partner}</td><td className="td">{x.partner_ic_dph}</td>
                       <td className="td"><Badge color={x.status === "confirmed" ? "green" : "amber"}>{x.status === "confirmed" ? "potvrdený" : "na kontrolu"}</Badge></td>
                       <td className="td num">{fmtMoney(x.total_net)}</td><td className="td num">{fmtMoney(x.total_vat)}</td><td className="td num">{fmtMoney(x.total_gross)}</td>

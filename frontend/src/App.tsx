@@ -1,25 +1,51 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Spinner } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { EntityListPage } from "@/pages/EntityListPage";
 import Login from "@/pages/Login";
-import Dashboard from "@/pages/Dashboard";
-import { ProjectCosts, ProjectDetail } from "@/pages/ProjectCosts";
-import Profitability from "@/pages/Profitability";
-import { ReviewQueue, DocumentsPage } from "@/pages/Documents";
+import Prehlad from "@/pages/Prehlad";
+import Doklady from "@/pages/Doklady";
 import DocumentDetail from "@/pages/DocumentDetail";
-import QuickCheck from "@/pages/QuickCheck";
-import Inbox from "@/pages/Inbox";
-import { HoursPage, TripsPage } from "@/pages/Work";
-import VehicleCheck from "@/pages/VehicleCheck";
-import Vat from "@/pages/Vat";
-import { BankPage, BankTransactionDetail } from "@/pages/Bank";
-import MonthlyCheck from "@/pages/MonthlyCheck";
-import { BillingList, BillingDetail } from "@/pages/Billing";
-import WorkerStatement from "@/pages/WorkerStatement";
-import Exports from "@/pages/Exports";
-import { Integrations, Parameters } from "@/pages/Settings";
+import Zakazky from "@/pages/Zakazky";
+import { ProjectDetail } from "@/pages/ProjectCosts";
+import Praca from "@/pages/Praca";
+import Financie from "@/pages/Financie";
+import { BankTransactionDetail } from "@/pages/Bank";
+import { BillingDetail } from "@/pages/Billing";
+import Vozidla, { VehicleDetail } from "@/pages/Vozidla";
+import Nastavenie from "@/pages/Nastavenie";
+
+/** Old addresses (bookmarks, links in e-mails) keep working. */
+const MOVED: [string, string][] = [
+  ["zakazky-naklady", "/zakazky/naklady"], ["ziskovost", "/zakazky/ziskovost"],
+  ["vozovy-park/vozidla", "/vozidla/zoznam"], ["vozovy-park/sadzby", "/vozidla/zaznamy"], ["vozovy-park/poistenie", "/vozidla/zaznamy"],
+  ["vozovy-park/znamky", "/vozidla/zaznamy"], ["vozovy-park/servis", "/vozidla/zaznamy"], ["vozovy-park/overenie", "/vozidla/terminy"],
+  ["vystupy/fakturacia", "/financie/fakturacia"], ["vystupy/exporty", "/financie/exporty"], ["vystupy/pracovnik", "/praca/vykaz"],
+  ["ciselniky/firmy", "/nastavenie/firmy"], ["ciselniky/ucty", "/nastavenie/ucty"], ["ciselniky/rady", "/nastavenie/rady"],
+  ["ciselniky/odberatelia", "/nastavenie/odberatelia"], ["ciselniky/zakazky", "/zakazky/zoznam"], ["ciselniky/pracovnici", "/nastavenie/pracovnici"],
+  ["ciselniky/sadzby", "/nastavenie/sadzby"], ["ciselniky/opakujuce", "/nastavenie/opakujuce"],
+  ["nastavenia/pouzivatelia", "/nastavenie/pouzivatelia"], ["nastavenia/parametre", "/nastavenie/parametre"],
+  ["nastavenia/integracie", "/nastavenie/integracie"], ["nastavenia/audit", "/nastavenie/historia"],
+];
+/** Old tab names inside areas that still exist under a new name. */
+const DOC_TABS: Record<string, string> = { "na-kontrolu": "/doklady/kontrola", "rychla-kontrola": "/doklady/kontrola", inbox: "/doklady/subory" };
+const FIN_TABS: Record<string, string> = { "mesacna-kontrola": "/", pravidla: "/financie/banka" };
+
+function MovedDetail({ to }: { to: string }) {
+  const { id } = useParams();
+  return <Navigate to={`${to}/${id}`} replace />;
+}
+/** `/doklady/123` was the old document address; `/doklady/blocky` is a tab of the new screen. */
+function DokladyRoute() {
+  const { tab = "" } = useParams();
+  if (/^\d+$/.test(tab)) return <Navigate to={`/doklad/${tab}`} replace />;
+  if (DOC_TABS[tab]) return <Navigate to={DOC_TABS[tab]} replace />;
+  return <Doklady />;
+}
+function FinancieRoute() {
+  const { tab = "" } = useParams();
+  return FIN_TABS[tab] ? <Navigate to={FIN_TABS[tab]} replace /> : <Financie />;
+}
 
 function Protected() {
   const { me, loading, isAdmin } = useAuth();
@@ -30,61 +56,37 @@ function Protected() {
       <Route element={<Layout />}>
         {isAdmin ? (
           <>
-            <Route index element={<Dashboard />} />
-            <Route path="zakazky-naklady" element={<ProjectCosts />} />
-            <Route path="zakazky-naklady/:id" element={<ProjectDetail />} />
-            <Route path="ziskovost" element={<Profitability />} />
-            <Route path="doklady/na-kontrolu" element={<ReviewQueue />} />
-            <Route path="doklady/blocky" element={<DocumentsPage docType="receipt" />} />
-            <Route path="doklady/prijate" element={<DocumentsPage docType="invoice_in" />} />
-            <Route path="doklady/vystavene" element={<DocumentsPage docType="invoice_out" />} />
-            <Route path="doklady/rychla-kontrola" element={<QuickCheck />} />
-            <Route path="doklady/inbox" element={<Inbox />} />
-            <Route path="doklady/polozky" element={<EntityListPage entity="allocations" title="Priradenia nákladov a výnosov"
-              sub="Každý riadok je časť dokladu priradená k zákazke (náklad alebo výnos)." extra="document_lines" />} />
-            <Route path="doklady/:id" element={<DocumentDetail />} />
-            <Route path="vozovy-park/vozidla" element={<EntityListPage entity="vehicles" title="Vozidlá" />} />
-            <Route path="vozovy-park/sadzby" element={<EntityListPage entity="vehicle_rates" title="Sadzby vozidiel €/km"
-              sub="Sadzba s platnosťou od–do. Jazda si sadzbu zafixuje k dátumu jazdy." />} />
-            <Route path="vozovy-park/poistenie" element={<EntityListPage entity="vehicle_insurance" title="PZP a poistenie"
-              sub="Nová zmluva = nový záznam, história ostáva." />} />
-            <Route path="vozovy-park/znamky" element={<EntityListPage entity="vehicle_vignettes" title="Diaľničné známky" />} />
-            <Route path="vozovy-park/servis" element={<EntityListPage entity="vehicle_services" title="Servis vozidiel"
-              sub="Náklady na servis, PZP a známky idú do Réžie (sú pokryté sadzbou €/km)." />} />
-            <Route path="vozovy-park/overenie" element={<VehicleCheck />} />
-            <Route path="financie/dph" element={<Vat />} />
-            <Route path="financie/banka" element={<BankPage />} />
-            <Route path="financie/banka/pohyb/:id" element={<BankTransactionDetail />} />
-            <Route path="financie/mesacna-kontrola" element={<MonthlyCheck />} />
-            <Route path="financie/pravidla" element={<EntityListPage entity="transaction_rules" title="Pravidlá bankových pohybov"
-              sub="Pohyby, ktoré nepotrebujú doklad (poplatky, mzdy, odvody, prevody medzi vlastnými účtami)." />} />
-            <Route path="vystupy/fakturacia" element={<BillingList />} />
-            <Route path="vystupy/fakturacia/:id" element={<BillingDetail />} />
-            <Route path="vystupy/exporty" element={<Exports />} />
-            <Route path="ciselniky/firmy" element={<EntityListPage entity="companies" title="Firmy"
-              sub="Každá firma má vlastné doklady, zákazky, DPH a Réžiu. Pri založení firmy sa automaticky vytvorí zákazka Réžia." />} />
-            <Route path="ciselniky/ucty" element={<EntityListPage entity="bank_accounts" title="Bankové účty aktívnej firmy" />} />
-            <Route path="ciselniky/rady" element={<EntityListPage entity="invoice_series" title="Číselné rady vystavených faktúr" />} />
-            <Route path="ciselniky/odberatelia" element={<EntityListPage entity="customers" title="Odberatelia" />} />
-            <Route path="ciselniky/zakazky" element={<EntityListPage entity="projects" title="Zákazky" />} />
-            <Route path="ciselniky/pracovnici" element={<EntityListPage entity="workers" title="Pracovníci"
-              sub="Pracovník môže pracovať pre viac firiem; jeho hodiny sa evidujú vo firme zákazky." />} />
-            <Route path="ciselniky/sadzby" element={<EntityListPage entity="worker_rates" title="Sadzby pracovníkov"
-              sub="Poradie: pracovník + zákazka → pracovník + firma → default pracovníka (platné k dátumu). Sadzby sa k hodinám fixujú pri zadaní." />} />
-            <Route path="ciselniky/opakujuce" element={<EntityListPage entity="recurring_rules" title="Opakujúce sa (povinné) faktúry"
-              sub="Idú do Réžie; ak v mesiaci chýbajú, mesačná kontrola upozorní." />} />
-            <Route path="nastavenia/pouzivatelia" element={<EntityListPage entity="users" title="Používatelia a roly" />} />
-            <Route path="nastavenia/parametre" element={<Parameters />} />
-            <Route path="nastavenia/integracie" element={<Integrations />} />
-            <Route path="nastavenia/audit" element={<EntityListPage entity="audit_log" title="Audit log" />} />
+            <Route index element={<Prehlad />} />
+            <Route path="prehlad" element={<Navigate to="/" replace />} />
+            <Route path="doklady" element={<Navigate to="/doklady/kontrola" replace />} />
+            <Route path="doklady/:tab" element={<DokladyRoute />} />
+            <Route path="doklad/:id" element={<DocumentDetail />} />
+            <Route path="zakazky" element={<Navigate to="/zakazky/naklady" replace />} />
+            <Route path="zakazky/:tab" element={<Zakazky />} />
+            <Route path="zakazka/:id" element={<ProjectDetail />} />
+            <Route path="financie" element={<Navigate to="/financie/banka" replace />} />
+            <Route path="financie/:tab" element={<FinancieRoute />} />
+            <Route path="pohyb/:id" element={<BankTransactionDetail />} />
+            <Route path="podklad/:id" element={<BillingDetail />} />
+            <Route path="vozidla" element={<Navigate to="/vozidla/zoznam" replace />} />
+            <Route path="vozidla/:tab" element={<Vozidla />} />
+            <Route path="vozidlo/:id" element={<VehicleDetail />} />
+            <Route path="nastavenie" element={<Navigate to="/nastavenie/firmy" replace />} />
+            <Route path="nastavenie/:sec" element={<Nastavenie />} />
+            {MOVED.map(([from, to]) => <Route key={from} path={from} element={<Navigate to={to} replace />} />)}
+            <Route path="zakazky-naklady/:id" element={<MovedDetail to="/zakazka" />} />
+            <Route path="financie/banka/pohyb/:id" element={<MovedDetail to="/pohyb" />} />
+            <Route path="vystupy/fakturacia/:id" element={<MovedDetail to="/podklad" />} />
           </>
         ) : (
-          <Route index element={<Navigate to="/praca/hodiny" replace />} />
+          <>
+            <Route index element={<Navigate to="/praca/hodiny" replace />} />
+            <Route path="vystupy/pracovnik" element={<Navigate to="/praca/vykaz" replace />} />
+          </>
         )}
-        <Route path="praca/hodiny" element={<HoursPage />} />
-        <Route path="praca/jazdy" element={<TripsPage />} />
-        <Route path="vystupy/pracovnik" element={<WorkerStatement />} />
-        <Route path="*" element={<div className="text-sm text-slate-500">Stránka neexistuje.</div>} />
+        <Route path="praca" element={<Navigate to="/praca/hodiny" replace />} />
+        <Route path="praca/:tab" element={<Praca />} />
+        <Route path="*" element={isAdmin ? <div className="text-sm text-slate-500">Stránka neexistuje.</div> : <Navigate to="/praca/hodiny" replace />} />
       </Route>
     </Routes>
   );

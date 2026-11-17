@@ -1,11 +1,17 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { api } from "@/lib/api";
-import { fmtDate, fmtMoney, fmtNum, fmtPct, fmtTime } from "@/lib/format";
+import { fmtDate, fmtMoney, fmtNum, fmtTime } from "@/lib/format";
 import { PeriodPicker, type Period } from "@/components/PeriodPicker";
+import { BudgetBar } from "./Prehlad";
+import { DataTable, useEntityMeta } from "@/components/DataTable";
+import { EntityDrawer } from "@/components/EntityDrawer";
 import { Badge, Empty, PageHeader, Spinner, Stat } from "@/components/ui";
+
+const STATUS_LABEL: Record<string, string> = { planned: "pripravovaná", in_progress: "prebiehajúca", finished: "ukončená" };
+const BILLING_LABEL: Record<string, string> = { hourly: "hodinovo podľa výkazu", fixed: "pevná cena", combined: "kombinácia" };
 
 interface CostRow {
   project_id: number; project_name: string; status: string; is_overhead: boolean; active: boolean;
@@ -54,9 +60,9 @@ export function ProjectCosts() {
               <tbody>
                 {q.data.rows.map((r) => (
                   <tr key={r.project_id} className={`cursor-pointer hover:bg-brand-50/60 dark:hover:bg-slate-800/60 ${r.active ? "" : "text-slate-400"}`}
-                    onClick={() => nav(`/zakazky-naklady/${r.project_id}`)}>
-                    <td className="td font-medium">{r.project_name} {r.is_overhead && <Badge>réžia</Badge>}
-                      {r.unconfirmed > 0 && !unconf && <span className="ml-1 text-xs text-amber-600">+{fmtMoney(r.unconfirmed)} nepotvrdené</span>}</td>
+                    onClick={() => nav(`/zakazka/${r.project_id}`)}>
+                    <td className="td font-medium">{r.project_name} {r.is_overhead && <Badge>réžia</Badge>} {r.status === "finished" && <Badge color="green">ukončená</Badge>}
+                      {r.unconfirmed > 0 && !unconf && <span className="ml-1 text-xs text-amber-600">+ {fmtMoney(r.unconfirmed)} čaká na kontrolu</span>}</td>
                     <td className="td num">{fmtNum(r.hours)}</td>
                     <td className="td num">{fmtMoney(r.labor)}</td>
                     <td className="td num">{fmtMoney(r.material_receipts)}</td>
@@ -65,7 +71,7 @@ export function ProjectCosts() {
                     <td className="td num font-semibold">{fmtMoney(r.total)}</td>
                     <td className="td num">{fmtMoney(r.budget)}</td>
                     <td className={`td num ${r.remaining !== null && r.remaining < 0 ? "text-red-600" : ""}`}>{fmtMoney(r.remaining)}</td>
-                    <td className="td num">{r.budget ? fmtPct(r.budget_used_pct) : "–"}</td>
+                    <td className="td">{r.budget ? <BudgetBar pct={r.budget_used_pct ?? 0} /> : "–"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -96,7 +102,10 @@ interface Detail {
 export function ProjectDetail() {
   const { id } = useParams();
   const [period, setPeriod] = useState<Period>({ from: null, to: null });
-  const [tab, setTab] = useState<"material" | "hours" | "trips" | "revenue" | "monthly">("material");
+  const [tab, setTab] = useState<"material" | "hours" | "trips" | "revenue" | "monthly" | "billing">("material");
+  const [edit, setEdit] = useState(false);
+  const nav = useNavigate();
+  const meta = useEntityMeta("projects");
   const q = useQuery({
     queryKey: ["project-detail", id, period],
     queryFn: () => api.get<Detail>(`/api/reports/project/${id}`, { date_from: period.from, date_to: period.to }),
@@ -107,12 +116,14 @@ export function ProjectDetail() {
   const total = d.summary.material + d.summary.labor + d.summary.transport;
   const tabs = [
     ["material", `Materiál (${d.material.length})`], ["hours", `Hodiny (${d.hours.length})`], ["trips", `Jazdy (${d.trips.length})`],
-    ["revenue", `Výnosy (${d.revenue.length})`], ["monthly", "Po mesiacoch"],
+    ["revenue", `Výnosy (${d.revenue.length})`], ["monthly", "Po mesiacoch"], ["billing", "Podklady k fakturácii"],
   ] as const;
   return (
     <div className="space-y-4">
-      <Link to="/zakazky-naklady" className="link inline-flex items-center gap-1 text-sm"><ArrowLeft className="h-3 w-3" /> Späť na zákazky</Link>
-      <PageHeader title={d.project.name} sub={d.project.budget ? `Rozpočet ${fmtMoney(d.project.budget)}` : undefined} />
+      <PageHeader back={{ to: "/zakazky/naklady", label: "Späť na zákazky" }}
+        title={<span className="flex flex-wrap items-center gap-2">{d.project.name} <Badge color={d.project.status === "finished" ? "green" : d.project.status === "in_progress" ? "blue" : "gray"}>{STATUS_LABEL[d.project.status] ?? d.project.status}</Badge> {d.project.is_overhead && <Badge>réžia</Badge>}</span>}
+        sub={[BILLING_LABEL[d.project.billing_type], d.project.budget ? `rozpočet ${fmtMoney(d.project.budget)}` : null, d.project.contract_price ? `zmluvná cena ${fmtMoney(d.project.contract_price)}` : null].filter(Boolean).join(" · ") || undefined}
+        actions={<button className="btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" /> Upraviť zákazku</button>} />
       <PeriodPicker value={period} onChange={setPeriod} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Náklady spolu" value={fmtMoney(total)} />
@@ -127,14 +138,21 @@ export function ProjectDetail() {
           <button key={k} className={`px-3 py-1.5 text-sm ${tab === k ? "border-b-2 border-brand-600 font-medium" : "text-slate-500"}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
-      <div className="card overflow-x-auto">
+      {tab === "billing" && (
+        <div className="space-y-3">
+          <div><button className="btn-primary" onClick={() => nav(`/financie/fakturacia?zakazka=${d.project.id}`)}><Plus className="h-4 w-4" /> Pripraviť nový podklad</button></div>
+          <DataTable entity="billing_statements" viewKey="billing_statements:project" hideCreate fixedFilters={[{ field: "project_id", op: "in", value: [d.project.id] }]} />
+        </div>
+      )}
+      {meta.data && <EntityDrawer meta={meta.data} id={d.project.id} open={edit} onClose={() => setEdit(false)} onSaved={() => void q.refetch()} />}
+      <div className={`card overflow-x-auto ${tab === "billing" ? "hidden" : ""}`}>
         {tab === "material" && (
           <table className="w-full text-sm">
             <thead><tr><th className="th">Dátum</th><th className="th">Doklad</th><th className="th">Dodávateľ</th><th className="th">Položka</th><th className="th">Stav</th><th className="th text-right">Suma</th></tr></thead>
             <tbody>{d.material.map((m) => (
               <tr key={m.allocation_id}>
                 <td className="td">{fmtDate(m.date)}</td>
-                <td className="td"><Link className="link" to={`/doklady/${m.document_id}`}>{m.doc_type === "receipt" ? "Bloček" : "Faktúra"} {m.number ?? `#${m.document_id}`}</Link></td>
+                <td className="td"><Link className="link" to={`/doklad/${m.document_id}`}>{m.doc_type === "receipt" ? "Bloček" : "Faktúra"} {m.number ?? `#${m.document_id}`}</Link></td>
                 <td className="td">{m.partner}</td><td className="td">{m.line ?? "celý doklad"}</td>
                 <td className="td"><Badge color={m.status === "confirmed" ? "green" : "amber"}>{m.status === "confirmed" ? "potvrdený" : "na kontrolu"}</Badge>{m.billed && <Badge color="blue">vyfakturované</Badge>}</td>
                 <td className="td num">{fmtMoney(m.amount)}</td>
@@ -173,7 +191,7 @@ export function ProjectDetail() {
             <thead><tr><th className="th">Dátum</th><th className="th">Faktúra</th><th className="th">Odberateľ</th><th className="th">Stav</th><th className="th text-right">Suma</th></tr></thead>
             <tbody>{d.revenue.map((r, i) => (
               <tr key={i}>
-                <td className="td">{fmtDate(r.date)}</td><td className="td"><Link className="link" to={`/doklady/${r.document_id}`}>{r.number ?? `#${r.document_id}`}</Link></td>
+                <td className="td">{fmtDate(r.date)}</td><td className="td"><Link className="link" to={`/doklad/${r.document_id}`}>{r.number ?? `#${r.document_id}`}</Link></td>
                 <td className="td">{r.partner}</td><td className="td">{r.status === "confirmed" ? "potvrdená" : "na kontrolu"}</td><td className="td num">{fmtMoney(r.amount)}</td>
               </tr>))}
             </tbody>

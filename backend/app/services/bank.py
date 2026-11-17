@@ -138,8 +138,11 @@ def import_statement_file(db: Session, company: Company, sf: SourceFile, data: b
                 n += 1
             key = f"{key}#{n}"
         seen.add(key)
-        if db.query(BankTransaction.id).filter(BankTransaction.company_id == company.id,
-                                               BankTransaction.dedupe_key == key).first():
+        known = db.query(BankTransaction).filter(BankTransaction.company_id == company.id,
+                                                 BankTransaction.dedupe_key == key).first()
+        if known:
+            if known.statement_id is None:  # left behind by a statement deleted in the past -> belongs to this one
+                known.statement_id = st.id
             continue
         db.add(BankTransaction(
             company_id=company.id, statement_id=st.id, bank_account_id=account.id, booking_date=tx["booking_date"],
@@ -392,6 +395,49 @@ def delete_match(ctx, match_id: int) -> None:
     audit.log(db, user_id=ctx.user.id, company_id=ctx.company_id, entity="bank_transactions", entity_id=tx.id,
               action="unmatch", changes={"document_id": (m.document_id, None)})
     db.commit()
+
+
+def unlink_document(db: Session, doc: Document) -> None:
+    """The document is being deleted: drop its matches and recompute the transactions they belonged to, so that
+    no transaction stays "matched" (with a matched amount) to a document that no longer exists."""
+    matches = db.query(TransactionMatch).filter(TransactionMatch.document_id == doc.id).all()
+    tx_ids = {m.transaction_id for m in matches}
+    for m in matches:
+        db.delete(m)
+    db.flush()
+    for tx_id in tx_ids:
+        refresh_tx(db, db.get(BankTransaction, tx_id))
+
+
+STATEMENT_DELETED_INFO = "Výpis bol vymazaný – súbor sa dá importovať znova."
+
+
+def before_delete_statement(ctx, st: BankStatement) -> None:
+    """Deleting a statement undoes its import: its transactions and their matches go with it, documents paid by
+    them are recomputed and the source file is released so that the same file can be imported again."""
+    db = ctx.db
+    txs = db.query(BankTransaction).filter(BankTransaction.statement_id == st.id).all()
+    doc_ids: set[int] = set()
+    if txs:
+        for m in db.query(TransactionMatch).filter(TransactionMatch.transaction_id.in_([t.id for t in txs])).all():
+            doc_ids.add(m.document_id)
+            db.delete(m)
+        db.flush()
+        for tx in txs:
+            db.delete(tx)
+        db.flush()
+    for doc_id in doc_ids:
+        doc = db.get(Document, doc_id)
+        if doc:
+            refresh_doc_payment(db, doc)
+    sf = db.get(SourceFile, st.source_file_id) if st.source_file_id else None
+    if sf and sf.status == "processed" and not db.query(BankStatement.id).filter(
+            BankStatement.source_file_id == sf.id, BankStatement.id != st.id).first():
+        sf.status = "skipped"
+        sf.error = STATEMENT_DELETED_INFO
+    audit.log(db, user_id=ctx.user.id, company_id=st.company_id, entity="bank_statements", entity_id=st.id,
+              action="delete_transactions",
+              note=f"Vymazané pohyby: {len(txs)}, prepočítané úhrady dokladov: {len(doc_ids)}")
 
 
 def action_no_document(ctx, ids, payload):

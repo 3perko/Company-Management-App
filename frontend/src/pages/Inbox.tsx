@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Play, Upload } from "lucide-react";
 import { api } from "@/lib/api";
-import { DataTable } from "@/components/DataTable";
-import { Card, PageHeader, Spinner, useToast } from "@/components/ui";
+import { DataTable, useEntityMeta } from "@/components/DataTable";
+import { EntityDrawer } from "@/components/EntityDrawer";
+import { PageHeader, Spinner, useToast } from "@/components/ui";
 
 interface UploadResult {
   stored: { file: string; new: boolean; requeued?: boolean; document_id: number | null }[];
@@ -14,7 +15,8 @@ interface UploadResult {
 const STATUS: Record<string, string> = { processed: "spracované", duplicate: "duplicita", error: "chyba" };
 const isKnown = (s: UploadResult["stored"][number]) => !s.new && !s.requeued;
 
-export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: string; compact?: boolean; onDone?: () => void }) {
+/** `bare` = without its own card and with a large drop zone (used inside the "Nahrať doklady" dialog). */
+export function UploadBox({ kind = "auto", compact = false, bare = false, onDone }: { kind?: string; compact?: boolean; bare?: boolean; onDone?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [k, setK] = useState(kind);
   const [physical, setPhysical] = useState(false);
@@ -48,9 +50,9 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
     }
   };
   return (
-    <div className={`card ${compact ? "p-3" : "p-4"}`}>
+    <div className={bare ? "" : `card ${compact ? "p-3" : "p-4"}`}>
       <div
-        className={`flex flex-wrap items-center gap-3 rounded-md border-2 border-dashed p-3 ${drag ? "border-brand-500 bg-brand-50 dark:bg-slate-800" : "border-slate-300 dark:border-slate-700"}`}
+        className={`flex flex-wrap items-center gap-3 rounded-lg border-2 border-dashed ${bare ? "justify-center p-6" : "p-3"} ${drag ? "border-brand-500 bg-brand-50 dark:bg-slate-800" : "border-slate-300 dark:border-slate-700"}`}
         onDragOver={(e) => {
           e.preventDefault();
           setDrag(true);
@@ -61,13 +63,14 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
           setDrag(false);
           void send(e.dataTransfer.files);
         }}>
-        <button className="btn-primary btn-sm" onClick={() => input.current?.click()} disabled={busy}>
-          {busy ? <Spinner /> : <Upload className="h-4 w-4" />} Nahrať doklady
+        <button className={bare ? "btn-primary" : "btn-primary btn-sm"} onClick={() => input.current?.click()} disabled={busy}>
+          {busy ? <Spinner /> : <Upload className="h-4 w-4" />} {bare ? "Vybrať súbory" : "Nahrať doklady"}
         </button>
         <input ref={input} type="file" multiple hidden accept="image/*,application/pdf,.xml,.csv,.xlsx"
           onChange={(e) => e.target.files && send(e.target.files)} />
         <span className="text-xs text-slate-500">alebo sem potiahnite súbory (fotky, skeny, PDF)</span>
-        <select className="input w-auto py-1 text-sm" value={k} onChange={(e) => setK(e.target.value)}>
+        {bare && <div className="basis-full" />}
+        <select className="input w-auto py-1 text-sm" value={k} onChange={(e) => setK(e.target.value)} aria-label="Druh dokladu">
           <option value="auto">Rozpoznať automaticky</option>
           <option value="receipt">Bloček</option>
           <option value="invoice_in">Prijatá faktúra</option>
@@ -75,20 +78,20 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
           <option value="bank">Bankový výpis</option>
         </select>
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" className="accent-brand-600" checked={physical} onChange={(e) => setPhysical(e.target.checked)} /> sken fyzického originálu</label>
-        {!compact && <input className="input w-56 py-1 text-sm" placeholder="Poznámka (napr. zákazka)" value={note} onChange={(e) => setNote(e.target.value)} />}
+        {!compact && <input className="input w-56 py-1 text-sm" placeholder="Poznámka (napr. názov zákazky)" aria-label="Poznámka" value={note} onChange={(e) => setNote(e.target.value)} />}
       </div>
       {result && (result.results.length > 0 || result.stored.some(isKnown)) && (
         <ul className="mt-2 space-y-0.5 text-sm">
           {result.stored.filter(isKnown).map((s, i) => (
             <li key={`known-${i}`}>
               <span className="font-medium">{s.file}</span>: súbor už je zaevidovaný, nič sa nezmenilo
-              {s.document_id && <> – <Link className="link" to={`/doklady/${s.document_id}`}>otvoriť doklad #{s.document_id}</Link></>}
+              {s.document_id && <> – <Link className="link" to={`/doklad/${s.document_id}`}>otvoriť doklad #{s.document_id}</Link></>}
             </li>
           ))}
           {result.results.map((r, i) => (
             <li key={i}>
               <span className="font-medium">{r.file}</span>: {STATUS[r.status] ?? r.status}
-              {r.document_id && <> – <Link className="link" to={`/doklady/${r.document_id}`}>otvoriť doklad #{r.document_id}</Link></>}
+              {r.document_id && <> – <Link className="link" to={`/doklad/${r.document_id}`}>otvoriť doklad #{r.document_id}</Link></>}
               {r.info && <span className="text-slate-500"> ({r.info})</span>}
             </li>
           ))}
@@ -98,16 +101,20 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
   );
 }
 
+/** Doklady → Prijaté súbory: everything that arrived from Drive, e-mail and manual upload. */
 export default function Inbox() {
   const qc = useQueryClient();
   const toast = useToast();
+  const nav = useNavigate();
+  const meta = useEntityMeta("source_files");
   const [running, setRunning] = useState(false);
+  const [edit, setEdit] = useState<number | null>(null);
   const run = async () => {
     setRunning(true);
     try {
       const r = await api.post<{ processed: unknown[]; errors: string[]; drive: unknown; gmail: unknown }>("/api/inbox/run");
       toast.ok(`Spracované súbory: ${r.processed.length}${r.errors.length ? ` – chyby: ${r.errors.join("; ")}` : ""}`);
-      await qc.invalidateQueries({ queryKey: ["data"] });
+      await qc.invalidateQueries();
     } catch (e) {
       toast.error(e);
     } finally {
@@ -116,12 +123,10 @@ export default function Inbox() {
   };
   return (
     <div className="space-y-4">
-      <PageHeader title="Inbox a súbory" sub="Súbory z Google Drive inboxu, e-mailu a ručného nahratia. Rovnaký súbor (podľa hashu) sa spracuje len raz."
-        actions={<button className="btn-primary" onClick={run} disabled={running}>{running ? <Spinner /> : <Play className="h-4 w-4" />} Spracovať inbox teraz</button>} />
-      <UploadBox onDone={() => qc.invalidateQueries({ queryKey: ["data", "source_files"] })} />
-      <Card title="Prijaté súbory">
-        <DataTable entity="source_files" hideCreate onOpen={(r) => r.document_id && window.open(`/doklady/${r.document_id}`, "_self")} />
-      </Card>
+      <PageHeader title="Prijaté súbory" sub="Sem prichádzajú súbory z Google Drive, e-mailu a ručného nahratia. Rovnaký súbor sa spracuje len raz; po vymazaní dokladu sa dá jeho súbor spracovať znova (nahrať ho ešte raz alebo označiť riadok a zvoliť „Spracovať znova“)."
+        actions={<button className="btn-primary" onClick={run} disabled={running}>{running ? <Spinner /> : <Play className="h-4 w-4" />} Spracovať teraz</button>} />
+      <DataTable entity="source_files" hideCreate onOpen={(r) => (r.document_id ? nav(`/doklad/${r.document_id}`) : setEdit(r.id))} />
+      {meta.data && edit !== null && <EntityDrawer meta={meta.data} id={edit} open onClose={() => setEdit(null)} />}
     </div>
   );
 }

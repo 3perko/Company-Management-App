@@ -41,10 +41,10 @@ export default function Exports() {
       </Card>
       <Card title="Ďalšie výstupy">
         <ul className="list-inside list-disc space-y-1 text-sm">
-          <li><Link className="link" to="/vystupy/fakturacia">Podklad k fakturácii</Link> – PDF, XLSX, CSV</li>
-          <li><Link className="link" to="/vystupy/pracovnik">Podklad pre pracovníka</Link> – PDF, XLSX</li>
+          <li><Link className="link" to="/financie/fakturacia">Podklad k fakturácii</Link> – PDF, XLSX, CSV</li>
+          <li><Link className="link" to="/praca/vykaz">Výkaz pracovníka</Link> – PDF, XLSX</li>
           <li><Link className="link" to="/financie/dph">Mesačný súhrn DPH</Link></li>
-          <li><Link className="link" to="/financie/mesacna-kontrola">Mesačná kontrola – čo chýba</Link> a <Link className="link" to="/financie/banka">banka – čo chýba</Link></li>
+          <li><Link className="link" to="/">Čo treba vybaviť za mesiac</Link> a <Link className="link" to="/financie/banka">banka – čo chýba</Link></li>
         </ul>
       </Card>
     </div>

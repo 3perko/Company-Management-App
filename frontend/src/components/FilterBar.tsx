@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Filter as FilterIcon, Plus, X } from "lucide-react";
 import { fmtDate, fmtMoney, fmtNum, monthRange, yearRange } from "@/lib/format";
 import type { FieldMeta, Filter } from "@/lib/types";
@@ -24,28 +24,64 @@ export function describeFilter(f: Filter, field?: FieldMeta): string {
   return `${field.label} ${ops[f.op] ?? f.op} „${String(v)}“`;
 }
 
-export function FilterBar({ fields, filters, onChange }: {
-  fields: FieldMeta[]; filters: Filter[]; onChange: (f: Filter[]) => void;
+/** Pill used in the row of active settings under the table toolbar (saved view, filters, grouping…). */
+export function Chip({ children, onRemove, removeLabel = "Odstrániť" }: {
+  children: ReactNode; onRemove?: () => void; removeLabel?: string;
 }) {
+  return (
+    <span className="chip max-w-full gap-1.5 border-brand-100 bg-brand-50 py-1 pl-2.5 text-brand-700 dark:border-slate-700 dark:bg-slate-800 dark:text-brand-100">
+      <span className="inline-flex min-w-0 items-center gap-1 truncate">{children}</span>
+      {onRemove && (
+        <button type="button" className="shrink-0 rounded-full p-0.5 hover:bg-brand-100 dark:hover:bg-slate-700" onClick={onRemove} aria-label={removeLabel}>
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+interface FilterProps { fields: FieldMeta[]; filters: Filter[]; onChange: (f: Filter[]) => void }
+
+/** Toolbar button that opens the "add filter" dialog. */
+export function FilterButton({ fields, filters, onChange }: FilterProps) {
   const [open, setOpen] = useState(false);
-  const fmap = new Map(fields.map((f) => [f.key, f]));
   return (
     <>
-      <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => setOpen(true)}>
         <FilterIcon className="h-3.5 w-3.5" /> Filter{filters.length > 0 && ` (${filters.length})`}
       </button>
-      {filters.map((f, i) => (
-        <span key={i} className="chip">
-          {describeFilter(f, fmap.get(f.field))}
-          <button onClick={() => onChange(filters.filter((_, j) => j !== i))} aria-label="Zrušiť filter"><X className="h-3 w-3" /></button>
-        </span>
-      ))}
-      {filters.length > 1 && <button className="text-xs text-slate-500 hover:underline" onClick={() => onChange([])}>zrušiť všetky</button>}
       <AddFilterModal open={open} onClose={() => setOpen(false)} fields={fields.filter((f) => f.filterable)}
         onAdd={(f) => {
           onChange([...filters.filter((x) => x.field !== f.field), f]);
           setOpen(false);
         }} />
+    </>
+  );
+}
+
+/** One removable chip per active filter (rendered inside the chips row under the toolbar). */
+export function FilterChips({ fields, filters, onChange }: FilterProps) {
+  const fmap = new Map(fields.map((f) => [f.key, f]));
+  return (
+    <>
+      {filters.map((f, i) => (
+        <Chip key={i} onRemove={() => onChange(filters.filter((_, j) => j !== i))} removeLabel="Odstrániť filter">
+          {describeFilter(f, fmap.get(f.field))}
+        </Chip>
+      ))}
+    </>
+  );
+}
+
+/** Button + chips together, for places that do not have a separate chips row. */
+export function FilterBar(props: FilterProps) {
+  return (
+    <>
+      <FilterButton {...props} />
+      <FilterChips {...props} />
+      {props.filters.length > 1 && (
+        <button type="button" className="text-xs text-slate-500 hover:underline" onClick={() => props.onChange([])}>zrušiť všetky filtre</button>
+      )}
     </>
   );
 }

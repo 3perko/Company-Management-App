@@ -64,10 +64,10 @@ export default function QuickCheck() {
                   <p>{res.partner_name} · {fmtDate(res.issue_date)} · <b>{fmtMoney(res.total_gross)}</b></p>
                   <p>Prišiel {fmtDateTime(res.received_at)} {res.received_from && `(${FROM[res.received_from] ?? res.received_from}${res.received_file ? `, ${res.received_file}` : ""})`}</p>
                   <p>{res.physical_original || res.marked_physical ? "✓ Fyzický originál je založený." : "Fyzický originál zatiaľ nie je označený."}</p>
-                  <Link className="link" to={`/doklady/${res.document_id}`}>Otvoriť doklad</Link>
+                  <Link className="link" to={`/doklad/${res.document_id}`}>Otvoriť doklad</Link>
                 </>
               )}
-              {res.created?.[0]?.document_id && <Link className="link" to={`/doklady/${res.created[0].document_id}`}>Otvoriť nový záznam</Link>}
+              {res.created?.[0]?.document_id && <Link className="link" to={`/doklad/${res.created[0].document_id}`}>Otvoriť nový záznam</Link>}
             </div>
           </div>
         </Card>

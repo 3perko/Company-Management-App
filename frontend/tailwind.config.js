@@ -6,7 +6,7 @@ export default {
     extend: {
       fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"] },
       colors: {
-        brand: { 50: "#eef4fb", 100: "#d6e4f5", 500: "#2f6db5", 600: "#245a98", 700: "#1e3a5f" },
+        brand: { 50: "#eef2fd", 100: "#dbe4fb", 500: "#3f66d6", 600: "#2f56c9", 700: "#2545a8" },
       },
     },
   },
