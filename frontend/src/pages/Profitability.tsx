@@ -64,7 +64,7 @@ export default function Profitability() {
               <tbody>
                 {d.rows.map((r) => (
                   <tr key={r.project_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="td"><Link className="link" to={`/zakazky-naklady/${r.project_id}`}>{r.project_name}</Link></td>
+                    <td className="td"><Link className="link" to={`/zakazka/${r.project_id}`}>{r.project_name}</Link></td>
                     <td className="td num">{fmtMoney(r.revenue)}</td><td className="td num">{fmtMoney(r.material)}</td>
                     <td className="td num">{fmtMoney(r.labor)}</td><td className="td num">{fmtMoney(r.transport)}</td>
                     <td className="td num">{fmtMoney(r.cost)}</td>

@@ -56,11 +56,11 @@ export function Parameters() {
   if (q.isLoading) return <Spinner />;
   return (
     <div className="space-y-4">
-      <PageHeader title="Parametre" sub={`Globálna hodnota platí pre všetky firmy; hodnota pre firmu (${company?.name}) ju prepíše. Prázdne = default.`}
+      <PageHeader title="Predvolené hodnoty" sub={`Hodnota „pre všetky firmy“ platí všade; hodnota pre firmu ${company?.name ?? ""} ju prepíše. Prázdne pole = použije sa predvolená hodnota.`}
         actions={<button className="btn-primary" onClick={save}><Save className="h-4 w-4" /> Uložiť</button>} />
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr><th className="th">Parameter</th><th className="th">Default</th><th className="th">Globálne</th><th className="th">Pre aktívnu firmu</th><th className="th">Platí</th></tr></thead>
+          <thead><tr><th className="th">Nastavenie</th><th className="th">Predvolená</th><th className="th">Pre všetky firmy</th><th className="th">Len pre túto firmu</th><th className="th">Práve platí</th></tr></thead>
           <tbody>{q.data?.map((p) => (
             <tr key={p.key}>
               <td className="td"><div className="font-medium">{p.label}</div>{p.help && <div className="text-xs text-slate-500">{p.help}</div>}</td>
@@ -74,7 +74,7 @@ export function Parameters() {
                 <select className="input" value={vals[p.key]?.company ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: { ...vals[p.key], company: e.target.value } })}>
                   <option value="">—</option><option value="true">áno</option><option value="false">nie</option></select>
               ) : <input className="input" value={vals[p.key]?.company ?? ""} onChange={(e) => setVals({ ...vals, [p.key]: { ...vals[p.key], company: e.target.value } })} />)
-                : <span className="text-xs text-slate-400">len globálne</span>}</td>
+                : <span className="text-xs text-slate-400">spoločné pre všetky</span>}</td>
               <td className="td font-medium">{toText(p.effective, p.type)}</td>
             </tr>))}
           </tbody>
@@ -107,9 +107,9 @@ export function Integrations() {
   const d = q.data;
   const local = d.google.email?.split("@")[0];
   return (
-    <div className="space-y-4">
-      <PageHeader title="Integrácie" sub="Google Drive a Gmail, eKasa, Claude API, banky a overenie vozidiel." />
-      <Card title="Google Drive + Gmail" actions={d.google.connected ? (
+    <div className="space-y-4 break-words">
+      <PageHeader title="Prepojenia" sub="Google Drive a Gmail, eKasa, čítanie dokladov cez Claude, banky a overenie vozidiel." />
+      <Card title="Google Drive a Gmail" actions={d.google.connected ? (
         <button className="btn-secondary btn-sm" onClick={async () => { await api.post("/api/integrations/google/disconnect"); await qc.invalidateQueries({ queryKey: ["integrations"] }); }}>Odpojiť</button>
       ) : (
         <button className="btn-primary btn-sm" disabled={!d.google.configured} onClick={async () => {
@@ -127,7 +127,7 @@ export function Integrations() {
             <Ok ok={!!d.company.drive_bank_inbox_folder_id}>Drive bankový inbox: {d.company.drive_bank_inbox_folder_id ?? "nenastavený"}</Ok>
             <Ok ok={!!d.company.email_tag_invoices}>E-mail pre faktúry: {d.company.email_tag_invoices ? `${local ?? "meno"}+${d.company.email_tag_invoices}@gmail.com` : "nenastavený"}</Ok>
             <Ok ok={!!d.company.email_tag_bank}>E-mail pre výpisy: {d.company.email_tag_bank ? `${local ?? "meno"}+${d.company.email_tag_bank}@gmail.com` : "nenastavený"}</Ok>
-            <p className="mt-1 text-xs text-slate-500">Priečinky a e-mailové tagy nastavíte v <Link className="link" to="/ciselniky/firmy">Číselníky → Firmy</Link>.</p>
+            <p className="mt-1 text-xs text-slate-500">Priečinky a e-mailové značky nastavíte v <Link className="link" to="/nastavenie/firmy">Nastavenie → Firmy</Link>.</p>
           </div>
           <div className="flex items-center gap-3">
             <button className="btn-secondary btn-sm" disabled={running} onClick={async () => {
@@ -137,12 +137,12 @@ export function Integrations() {
                 toast.ok(`Spracované súbory: ${r.processed.length}${r.errors.length ? ` · ${r.errors.join("; ")}` : ""}`);
                 await qc.invalidateQueries({ queryKey: ["integrations"] });
               } catch (e) { toast.error(e); } finally { setRunning(false); }
-            }}>{running ? <Spinner /> : <Play className="h-3.5 w-3.5" />} Spracovať inbox teraz</button>
+            }}>{running ? <Spinner /> : <Play className="h-3.5 w-3.5" />} Spracovať prijaté súbory teraz</button>
             <span className="text-xs text-slate-500">Posledné spracovanie: {fmtDateTime(d.inbox_last_run) || "–"}. Automaticky denne podľa parametra „Čas automatického spracovania inboxu“.</span>
           </div>
         </div>
       </Card>
-      <Card title="Claude API (čítanie dokladov)">
+      <Card title="Čítanie dokladov (Claude)">
         <Ok ok={d.claude.configured}>{d.claude.configured ? `Nakonfigurované, model ${d.claude.model}` : "Nenakonfigurované – nastavte ANTHROPIC_API_KEY v .env. Bez neho sa doklady bez eKasa zadávajú ručne."}</Ok>
       </Card>
       <Card title="eKasa (Finančná správa SR)">

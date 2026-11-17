@@ -6,7 +6,14 @@ import { fmtDateTime } from "@/lib/format";
 import type { EntityMeta, Row } from "@/lib/types";
 import { cellText } from "./cells";
 import { FieldInput } from "./inputs";
-import { Drawer, Spinner, useToast } from "./ui";
+import { Drawer, Spinner, useConfirm, useToast } from "./ui";
+
+const DELETE_WARNINGS: Record<string, string> = {
+  bank_statements: "Vymazať výpis? Vymažú sa aj všetky jeho pohyby a ich spárovanie; faktúry uhradené týmito pohybmi sa vrátia medzi neuhradené. Ten istý výpis potom môžete importovať znova.",
+  timesheets: "Naozaj vymazať tento záznam hodín? Ak je v rozpracovanom podklade k fakturácii, zmizne aj z neho.",
+  trips: "Naozaj vymazať túto jazdu? Ak je v rozpracovanom podklade k fakturácii, zmizne aj z neho.",
+  source_files: "Vymazať záznam o súbore? Doklad, ktorý z neho vznikol, ostane; súbor môžete nahrať znova.",
+};
 
 interface Props {
   meta: EntityMeta;
@@ -63,6 +70,7 @@ export function EntityForm({ meta, values, setValues, onSubmit, autoFocusFirst }
 export function EntityDrawer({ meta, id, open, onClose, defaults, onSaved }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [orig, setOrig] = useState<Record<string, unknown>>({});
   const [tab, setTab] = useState<"form" | "history">("form");
@@ -133,12 +141,14 @@ export function EntityDrawer({ meta, id, open, onClose, defaults, onSaved }: Pro
   };
 
   const remove = async () => {
-    const msg = meta.deletable ? "Naozaj vymazať tento záznam?" : "Deaktivovať záznam? (zostane v histórii, len sa skryje)";
-    if (!confirm(msg)) return;
+    // deleting some records has consequences elsewhere – say so before the user confirms
+    const msg = DELETE_WARNINGS[meta.entity] ?? (meta.deletable ? "Naozaj vymazať tento záznam?" : "Deaktivovať záznam? Zostane v histórii, len sa skryje zo zoznamov a výberov.");
+    if (!(await confirm(msg, meta.deletable ? "Vymazať" : "Deaktivovať"))) return;
     try {
       await api.del(`/api/data/${meta.entity}/${id}`);
       toast.ok(meta.deletable ? "Vymazané" : "Deaktivované");
-      await qc.invalidateQueries({ queryKey: ["data", meta.entity] });
+      // a delete can change other lists and reports too (bank movements, payments, statements, counts in the menu)
+      await qc.invalidateQueries();
       onClose();
     } catch (e) {
       toast.error(e);

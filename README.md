@@ -85,13 +85,13 @@ docker compose pull && docker compose up -d --build
 
 ## 3. Prvé kroky v aplikácii
 
-1. **Číselníky → Firmy:** založte firmy (IČO, IČ DPH, platiteľ DPH). Každá nová firma automaticky dostane zákazku **Réžia**.
+1. **Nastavenie → Firmy:** založte firmy (IČO, IČ DPH, platiteľ DPH). Každá nová firma automaticky dostane zákazku **Réžia**.
 2. Hore v hlavičke zvoľte **aktívnu firmu**. Všetko ďalej (doklady, zákazky, banka, DPH) sa týka len nej.
-3. **Číselníky → Bankové účty, Číselné rady, Odberatelia, Zákazky** (vzdialenosť jedným smerom, rozpočet, typ fakturácie).
-4. **Číselníky → Pracovníci** (firmy, pre ktoré pracujú) a **Sadzby pracovníkov**. Nákladová aj fakturačná sadzba môže byť default, pre firmu alebo pre zákazku, vždy s platnosťou od–do.
-5. **Vozový park → Vozidlá** (sadzba €/km pri založení, ďalšie zmeny v „Sadzby €/km“), PZP, známky, servis.
-6. **Nastavenia → Používatelia a roly:** pracovníkom vytvorte účty s rolou *Pracovník* a prepojte ich so záznamom pracovníka. Uvidia len Hodiny, Jazdy a svoj podklad.
-7. **Nastavenia → Parametre:** prirážka k vzdialenosti (10 %), zaokrúhlenie hodín, dni na doloženie dokladu, prirážka na materiál, predstih upozornení, čas spracovania inboxu (20:00) a ďalšie.
+3. **Nastavenie → Bankové účty, Číselné rady faktúr, Odberatelia** a **Zákazky → Zoznam a nastavenie** (vzdialenosť jedným smerom, rozpočet, spôsob fakturácie).
+4. **Nastavenie → Pracovníci** (firmy, pre ktoré pracujú) a **Sadzby pracovníkov**. Nákladová aj fakturačná sadzba môže byť default, pre firmu alebo pre zákazku, vždy s platnosťou od–do.
+5. **Vozidlá** (sadzba €/km pri založení; ďalšie zmeny, PZP, známky a servis sú v detaile vozidla).
+6. **Nastavenie → Používatelia a prístupy:** pracovníkom vytvorte účty s rolou *Pracovník* a prepojte ich so záznamom pracovníka. Uvidia len oblasť Práca (Hodiny, Jazdy a svoj výkaz).
+7. **Nastavenie → Predvolené hodnoty:** prirážka k vzdialenosti (10 %), zaokrúhlenie hodín, dni na doloženie dokladu, prirážka na materiál, predstih upozornení, čas spracovania inboxu (20:00) a ďalšie.
 
 ## 4. Integrácie
 
@@ -99,7 +99,7 @@ docker compose pull && docker compose up -d --build
 Do `.env` vložte `ANTHROPIC_API_KEY` (konzola: https://platform.claude.com). Bločky sa najprv skúsia načítať z eKasy podľa QR kódu a Claude API sa použije, len keď eKasa nepomôže. Faktúry sa čítajú cez Claude API. Bez kľúča aplikácia funguje, len údaje dokladov treba doplniť ručne.
 
 ### eKasa (Finančná správa)
-Je zapnutá v predvolenom nastavení. ID dokladu (`O-…`) sa číta deterministicky z QR kódu. Test pripojenia nájdete v *Nastavenia → Integrácie*.
+Je zapnutá v predvolenom nastavení. ID dokladu (`O-…`) sa číta deterministicky z QR kódu. Test pripojenia nájdete v *Nastavenie → Prepojenia*.
 
 ### Google Drive + Gmail (bežný Gmail účet)
 1. V [Google Cloud Console](https://console.cloud.google.com/) vytvorte projekt a zapnite **Google Drive API** a **Gmail API**.
@@ -108,16 +108,16 @@ Je zapnutá v predvolenom nastavení. ID dokladu (`O-…`) sa číta determinist
 3. *Credentials → Create OAuth client ID* → **Web application**, *Authorized redirect URI*:
    `https://<vaša-doména>/api/integrations/google/callback` (lokálne `http://localhost:8000/api/integrations/google/callback`).
 4. `GOOGLE_CLIENT_ID` a `GOOGLE_CLIENT_SECRET` vložte do `.env` a reštartujte (`docker compose up -d`).
-5. V aplikácii otvorte *Nastavenia → Integrácie → Pripojiť Google účet*.
-6. Pri každej firme (*Číselníky → Firmy*) vyplňte:
+5. V aplikácii otvorte *Nastavenie → Prepojenia → Pripojiť Google účet*.
+6. Pri každej firme (*Nastavenie → Firmy*) vyplňte:
    - **ID priečinka inbox** („na spracovanie“), **ID priečinka spracované** a **ID bankového inboxu**. ID je časť URL priečinka za `/folders/`.
    - **E-mail tag pre faktúry / výpisy**, napr. `firma1-faktury` → dodávatelia posielajú na `vasmeno+firma1-faktury@gmail.com`.
-7. Denne v nastavenom čase (default 20:00) plánovač stiahne prílohy z Gmailu do Drive inboxu, z Drive inboxu prevezme nové súbory, presunie ich do „spracované“ a spracuje ich. Ručne to spustíte tlačidlom **Spracovať inbox teraz**.
+7. Denne v nastavenom čase (default 20:00) plánovač stiahne prílohy z Gmailu do Drive inboxu, z Drive inboxu prevezme nové súbory, presunie ich do „spracované“ a spracuje ich. Ručne to spustíte tlačidlom **Spracovať teraz** v *Doklady → Prijaté súbory*.
 
 Paralelná prevádzka podľa master promptu: aplikácia má používať **nový, čistý Google Drive** s rovnakou štruktúrou, aby sa jej výsledky dali porovnať s vašimi existujúcimi podkladmi.
 
 ### Bankové výpisy
-Výpisy nahrajte v *Financie → Banka → Importovať výpis*, alebo cez e-mail tag pre výpisy / bankový Drive inbox. Podporované formáty sú XML CAMT.053, CSV, XLSX a PDF (PDF cez Claude API). Účet sa priradí podľa IBAN. Ak IBAN nepatrí aktívnej firme, výpis sa odmietne.
+Výpisy nahrajte v *Financie → Banka → Importovať výpis* (alebo cez tlačidlo *Pridať*), alebo cez e-mail tag pre výpisy / bankový Drive inbox. Podporované formáty sú XML CAMT.053, CSV, XLSX a PDF (PDF cez Claude API). Účet sa priradí podľa IBAN. Ak IBAN nepatrí aktívnej firme, výpis sa odmietne.
 
 ### Overenie vozidla
 Verejné služby (eznamka.sk, SKP, TÜV SÜD) nemajú verejné API. Aplikácia preto otvorí overovaciu stránku, skopíruje ŠPZ do schránky a výsledok zapíšete jedným klikom. Pri nezhode s evidenciou vznikne upozornenie. Nové služby sa pridávajú ako adaptér v `backend/app/services/vehicle_check.py`.
@@ -172,7 +172,7 @@ backend/app
 └── cli.py           create-admin, seed-demo, run-inbox
 frontend/src
 ├── components/      DataTable (výber stĺpcov, filtre, pohľady, súčty, zoskupenie, export), vstupy (dátum, čas 24 h…)
-└── pages/           stránky podľa logických celkov (Prehľady, Doklady, Práca a doprava, Vozový park, Financie…)
+└── pages/           sedem oblastí menu (Prehľad, Doklady, Zákazky, Práca, Financie, Vozidlá, Nastavenie) a ich záložky
 ```
 
 - **Nové pole v UI:** stačí ho pridať do modelu (+ migrácia `alembic revision --autogenerate`) a do registra v `backend/app/registry/entities.py`. Frontend ho automaticky ponúkne vo výbere stĺpcov, filtroch, exporte aj vo formulári.
