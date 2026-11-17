@@ -92,7 +92,7 @@ def google_callback(code: str = "", state: str = "", error: str = "", db: Sessio
             msg = f"Chyba: {exc}"
     import html
     return HTMLResponse(f"<html><body style='font-family:sans-serif;padding:2rem'><p>{html.escape(msg)}</p>"
-                        f"<p><a href='/nastavenia/integracie'>Späť do aplikácie</a></p></body></html>")
+                        f"<p><a href='/nastavenie/integracie'>Späť do aplikácie</a></p></body></html>")
 
 
 @router.post("/integrations/google/disconnect")

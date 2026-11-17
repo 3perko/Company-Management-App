@@ -143,6 +143,8 @@ def delete(ent: Entity, ctx, obj_id: int) -> None:
     obj = load(ent, ctx, obj_id)
     if not ent.deletable:
         if ent.has_active:
+            if ent.before_delete:  # deactivation must respect the same guards as a real delete
+                ent.before_delete(ctx, obj)
             obj.active = False
             audit.log(ctx.db, user_id=ctx.user.id, company_id=ctx.company.id if ctx.company else None,
                       entity=ent.name, entity_id=obj.id, action="deactivate")

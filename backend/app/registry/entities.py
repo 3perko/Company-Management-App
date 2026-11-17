@@ -141,9 +141,14 @@ def _project_before_save(ctx, obj: Project, data, is_new):
         raise HTTPException(422, "Réžiu nie je možné deaktivovať.")
 
 
+def _project_before_delete(ctx, obj: Project):
+    if obj.is_overhead:  # DELETE deactivates – the same rule as when saving active = false
+        raise HTTPException(422, "Réžiu nie je možné deaktivovať.")
+
+
 register(Entity(
     name="projects", label="Zákazky", model=Project, has_active=True, deletable=False, default_sort="name:asc",
-    read_roles=ALL_ROLES, before_save=_project_before_save,
+    read_roles=ALL_ROLES, before_save=_project_before_save, before_delete=_project_before_delete,
     joins=lambda: [(PCust, PCust.id == Project.customer_id)],
     fields=[
         F("name", "Názov", required=True),
@@ -265,6 +270,11 @@ def _user_before_save(ctx, obj: User, data, is_new):
         raise HTTPException(422, "Nemôžete si odobrať rolu admin ani sa deaktivovať.")
 
 
+def _user_before_delete(ctx, obj: User):
+    if obj.id == ctx.user.id:  # DELETE deactivates – the same rule as when saving active = false
+        raise HTTPException(422, "Nemôžete si odobrať rolu admin ani sa deaktivovať.")
+
+
 def _user_companies_save(ctx, obj: User, ids):
     before = [c.id for c in obj.companies]
     obj.companies = [ctx.db.get(Company, i) for i in ids if ctx.db.get(Company, i)]
@@ -273,7 +283,8 @@ def _user_companies_save(ctx, obj: User, ids):
 
 register(Entity(
     name="users", label="Používatelia", model=User, company_scoped=False, has_active=True, deletable=False,
-    default_sort="name:asc", before_save=_user_before_save, multiref_save={"company_ids": _user_companies_save},
+    default_sort="name:asc", before_save=_user_before_save, before_delete=_user_before_delete,
+    multiref_save={"company_ids": _user_companies_save},
     joins=lambda: [(UW, UW.id == User.worker_id)],
     fields=[
         F("name", "Meno", required=True), F("email", "E-mail (prihlasovacie meno)", required=True),
@@ -354,8 +365,19 @@ def _ts_before_save(ctx, obj: TimesheetEntry, data, is_new):
     calc.apply_timesheet(ctx.db, obj, refresh_rates=refresh, hours_explicit=hours_explicit)
 
 
+def _drop_draft_lines(ctx, **ids):
+    from app.services import billing
+    billing.drop_draft_lines(ctx.db, user_id=ctx.user.id, **ids)
+
+
 def _ts_before_delete(ctx, obj):
     _check_not_billed(ctx, obj.billing_statement_id)
+    _drop_draft_lines(ctx, timesheet_ids=[obj.id])
+
+
+def _trip_before_delete(ctx, obj):
+    _check_not_billed(ctx, obj.billing_statement_id)
+    _drop_draft_lines(ctx, trip_ids=[obj.id])
 
 
 def _ts_complete_expr():
@@ -441,7 +463,7 @@ def _trip_crew_save(ctx, obj: Trip, ids):
 register(Entity(
     name="trips", label="Jazdy", model=Trip, read_roles=ALL_ROLES, write_roles=ALL_ROLES,
     row_filter=_trip_row_filter, default_sort="date:desc", before_save=_trip_before_save,
-    before_delete=lambda ctx, obj: _check_not_billed(ctx, obj.billing_statement_id),
+    before_delete=_trip_before_delete,
     multiref_save={"crew_ids": _trip_crew_save}, title_field="date",
     joins=lambda: [(TrVeh, TrVeh.id == Trip.vehicle_id), (TrProj, TrProj.id == Trip.project_id),
                    (TrDriver, TrDriver.id == Trip.driver_id)],
@@ -496,7 +518,7 @@ def _vehicle_after_save(ctx, obj: Vehicle, data, is_new):
 
 register(Entity(
     name="vehicles", label="Vozidlá", model=Vehicle, has_active=True, deletable=False, default_sort="name:asc",
-    read_roles=ADMIN, after_save=_vehicle_after_save,
+    read_roles=ADMIN, after_save=_vehicle_after_save, detail_url="/vozidlo/{id}",
     fields=[
         F("name", "Pomenovanie", required=True), F("manufacturer", "Výrobca"), F("model", "Model"),
         F("plate", "ŠPZ"), F("vin", "VIN", default_visible=False),
@@ -622,7 +644,7 @@ DOC_FIELDS = [
 
 register(Entity(
     name="documents", label="Doklady", model=Document, default_sort="issue_date:desc", title_field="number",
-    detail_url="/doklady/{id}", creatable=False,
+    detail_url="/doklad/{id}", creatable=False,
     joins=lambda: [(DCust, DCust.id == Document.customer_id), (DSeries, DSeries.id == Document.series_id),
                    (DFile, DFile.id == Document.source_file_id)],
     before_delete=lambda ctx, obj: __import__("app.services.documents", fromlist=["x"]).before_delete(ctx, obj),
@@ -705,7 +727,7 @@ register(Entity(
 BProj = aliased(Project)
 register(Entity(
     name="billing_statements", label="Podklady k fakturácii", model=BillingStatement, default_sort="period_to:desc",
-    creatable=False, detail_url="/vystupy/fakturacia/{id}", title_field="id",
+    creatable=False, detail_url="/podklad/{id}", title_field="id",
     joins=lambda: [(BProj, BProj.id == BillingStatement.project_id)],
     before_delete=lambda ctx, obj: __import__("app.services.billing", fromlist=["x"]).before_delete(ctx, obj),
     fields=[
@@ -725,6 +747,7 @@ register(Entity(
     name="bank_statements", label="Bankové výpisy", model=BankStatement, default_sort="created_at:desc",
     creatable=False, write_roles=ADMIN, title_field="id",
     joins=lambda: [(BTAcc, BTAcc.id == BankStatement.bank_account_id)],
+    before_delete=lambda ctx, obj: __import__("app.services.bank", fromlist=["x"]).before_delete_statement(ctx, obj),
     fields=[
         F("created_at", "Importované", "datetime", editable=False),
         F("bank_account_id", "Účet", "ref", ref="bank_accounts", label_expr=lambda: BTAcc.iban, editable=False),
@@ -749,7 +772,7 @@ from app.models import TransactionMatch  # noqa: E402
 MDoc = aliased(Document)
 register(Entity(
     name="bank_transactions", label="Bankové pohyby", model=BankTransaction, default_sort="booking_date:desc",
-    creatable=False, deletable=False, title_field="counterparty_name", detail_url="/financie/banka/pohyb/{id}",
+    creatable=False, deletable=False, title_field="counterparty_name", detail_url="/pohyb/{id}",
     joins=lambda: [(TAcc, TAcc.id == BankTransaction.bank_account_id), (TRule, TRule.id == BankTransaction.rule_id)],
     actions=[
         Action("no_document", "Nepotrebuje doklad", _bank_action("action_no_document")),

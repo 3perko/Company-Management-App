@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadF
 from fastapi.responses import FileResponse
 
 from app.deps import Ctx, get_ctx, require_admin
-from app.models import DocumentSource, SourceFile
+from app.models import SourceFile
 from app.services import documents as ds
 from app.services import ingest, jobs, storage
 
@@ -100,10 +100,7 @@ async def attach(doc_id: int, file: UploadFile = File(...), physical: bool = For
 @router.delete("/documents/{doc_id}/files/{file_id}")
 def detach(doc_id: int, file_id: int, ctx: Ctx = Depends(require_admin)):
     doc = ds.load_doc(ctx, doc_id)
-    ctx.db.query(DocumentSource).filter(DocumentSource.document_id == doc.id,
-                                        DocumentSource.source_file_id == file_id).delete()
-    if doc.source_file_id == file_id:
-        doc.source_file_id = None
+    ds.detach_file(ctx, doc, file_id)
     ctx.db.commit()
     return ds.doc_to_dict(ctx.db, doc)
 

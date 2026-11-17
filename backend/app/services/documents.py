@@ -11,7 +11,7 @@ from app.models import (
     SourceFile, TransactionMatch,
 )
 from app.registry.base import serialize
-from app.services import audit
+from app.services import audit, bank, billing
 from app.services.calc import money
 
 CENT = Decimal("0.01")
@@ -292,6 +292,11 @@ def save_full(ctx, doc: Document, payload: dict) -> Document:
             line_map[f"idx:{pos}"] = ln
         for lid, ln in existing.items():
             if ln not in keep:
+                # allocations of a removed line go with it (explicitly, not only by the database cascade)
+                gone = [a for a in doc.allocations if a.line_id == lid]
+                billing.drop_draft_lines(db, allocation_ids=[a.id for a in gone], user_id=ctx.user.id)
+                for a in gone:
+                    doc.allocations.remove(a)
                 doc.lines.remove(ln)
         changes["lines"] = (None, f"{len(keep)} položiek")
         db.flush()
@@ -307,9 +312,8 @@ def save_full(ctx, doc: Document, payload: dict) -> Document:
         doc.total_net = money(Decimal(doc.total_gross) - Decimal(doc.total_vat))
 
     if "allocations" in payload:
-        doc.allocations.clear()
-        db.flush()
         direction = direction_for(doc)
+        wanted = []
         for ad in payload["allocations"]:
             if not ad.get("project_id"):
                 continue
@@ -322,10 +326,13 @@ def save_full(ctx, doc: Document, payload: dict) -> Document:
                 raise HTTPException(422, "Zákazka nepatrí aktívnej firme.")
             net, gross = _alloc_amounts(doc, line, _dec(ad.get("share_pct")), _dec(ad.get("amount_net")),
                                         _dec(ad.get("amount_gross")), _dec(ad.get("quantity")))
-            doc.allocations.append(Allocation(
-                company_id=doc.company_id, line_id=line.id if line else None, project_id=p.id, direction=direction,
-                share_pct=_dec(ad.get("share_pct")), quantity=_dec(ad.get("quantity")), amount_net=net,
-                amount_gross=gross, note=ad.get("note")))
+            w = {"line_id": line.id if line else None, "project_id": p.id, "direction": direction,
+                 "amount_net": net, "amount_gross": gross}
+            w.update({k: _dec(ad[k]) for k in ("share_pct", "quantity") if k in ad})
+            if "note" in ad:
+                w["note"] = ad["note"]
+            wanted.append(w)
+        replace_allocations(ctx, doc, wanted)
         doc.mixed = any(a.line_id for a in doc.allocations)
         changes["allocations"] = (None, ", ".join(f"{a.project_id}:{a.amount_gross}" for a in doc.allocations))
     warnings = [w for w in get_warnings(doc) if not w.startswith("Súčet položiek") and not w.startswith("Základ + DPH")]
@@ -334,6 +341,36 @@ def save_full(ctx, doc: Document, payload: dict) -> Document:
     audit.log(db, user_id=ctx.user.id, company_id=doc.company_id, entity="documents", entity_id=doc.id,
               action="update", changes=changes)
     return doc
+
+
+def _alloc_key(line_id, project_id, direction, amount_net, amount_gross) -> tuple:
+    return line_id, project_id, direction, money(amount_net), money(amount_gross)
+
+
+def replace_allocations(ctx, doc: Document, wanted: list[dict]) -> None:
+    """Make the allocations of the document equal to `wanted`. Rows that do not change (same line, project,
+    direction and amounts) are kept – the detail form sends all allocations on every save, and recreating them
+    would break the links from billing statements (the item would be invoiced without being marked as billed).
+    Changed and removed rows are deleted and taken out of draft billing statements."""
+    db = ctx.db
+    pool = sorted(doc.allocations, key=lambda a: a.id or 0)
+    new = []
+    for w in wanted:
+        key = _alloc_key(w["line_id"], w["project_id"], w["direction"], w["amount_net"], w["amount_gross"])
+        hit = next((a for a in pool
+                    if _alloc_key(a.line_id, a.project_id, a.direction, a.amount_net, a.amount_gross) == key), None)
+        if hit is None:
+            new.append(Allocation(company_id=doc.company_id, **w))
+            continue
+        pool.remove(hit)
+        for k in ("share_pct", "quantity", "note"):
+            if k in w:
+                setattr(hit, k, w[k])
+    billing.drop_draft_lines(db, allocation_ids=[a.id for a in pool if a.id], user_id=ctx.user.id)
+    for a in pool:
+        doc.allocations.remove(a)
+    db.flush()
+    doc.allocations.extend(new)
 
 
 def confirm(ctx, doc: Document) -> None:
@@ -358,11 +395,9 @@ def set_whole_project(ctx, doc: Document, project_id: int) -> None:
     p = db.get(Project, project_id)
     if not p or p.company_id != doc.company_id:
         raise HTTPException(422, "Zákazka nepatrí aktívnej firme.")
-    doc.allocations.clear()
-    db.flush()
-    doc.allocations.append(Allocation(company_id=doc.company_id, project_id=p.id, direction=direction_for(doc),
-                                      share_pct=Decimal(100), amount_net=money(doc.total_net or doc.total_gross or 0),
-                                      amount_gross=money(doc.total_gross or doc.total_net or 0)))
+    replace_allocations(ctx, doc, [{"line_id": None, "project_id": p.id, "direction": direction_for(doc),
+                                    "share_pct": Decimal(100), "amount_net": money(doc.total_net or doc.total_gross or 0),
+                                    "amount_gross": money(doc.total_gross or doc.total_net or 0)}])
     doc.mixed = False
     audit.log(db, user_id=ctx.user.id, company_id=doc.company_id, entity="documents", entity_id=doc.id,
               action="update", changes={"allocations": (None, f"celý doklad → {p.name}")})
@@ -437,10 +472,14 @@ def before_delete(ctx, doc: Document) -> None:
         raise HTTPException(409, "Doklad je vyfakturovaný v uzavretom podklade a nedá sa vymazať.")
     for d in ctx.db.query(Document).filter(Document.duplicate_of_id == doc.id):
         d.duplicate_of_id = None
+    # nothing may keep pointing at the deleted document or keep state derived from it
+    billing.drop_draft_lines(ctx.db, allocation_ids=[a.id for a in doc.allocations], user_id=ctx.user.id)
+    bank.unlink_document(ctx.db, doc)
     release_source_files(ctx.db, doc)
 
 
 FILE_RELEASED_INFO = "Doklad bol vymazaný – súbor sa dá spracovať znova."
+FILE_DETACHED_INFO = "Súbor bol odpojený od dokladu – dá sa spracovať znova."
 
 
 def release_source_files(db: Session, doc: Document) -> None:
@@ -450,14 +489,36 @@ def release_source_files(db: Session, doc: Document) -> None:
     files = db.query(SourceFile).filter(SourceFile.company_id == doc.company_id,
                                         (SourceFile.document_id == doc.id) | SourceFile.id.in_(attached))
     for sf in files:
-        other = (db.query(DocumentSource).filter(DocumentSource.source_file_id == sf.id,
-                                                 DocumentSource.document_id != doc.id).first())
-        if other:  # the same file is also attached to another document -> keep it there
-            sf.document_id = other.document_id
-            continue
-        sf.document_id = None
-        sf.status = "skipped"
-        sf.error = FILE_RELEASED_INFO
+        _release_file(db, sf, doc.id, FILE_RELEASED_INFO)
+
+
+def _release_file(db: Session, sf: SourceFile, doc_id: int, info: str) -> None:
+    other = (db.query(DocumentSource).filter(DocumentSource.source_file_id == sf.id,
+                                             DocumentSource.document_id != doc_id).first())
+    if other:  # the same file is also attached to another document -> keep it there
+        sf.document_id = other.document_id
+        return
+    sf.document_id = None
+    sf.status = "skipped"
+    sf.error = info
+
+
+def detach_file(ctx, doc: Document, file_id: int) -> None:
+    """Remove a file from the document. A file that is left without any document is released the same way as when
+    its document is deleted, so that it can be uploaded / processed again."""
+    db = ctx.db
+    removed = db.query(DocumentSource).filter(DocumentSource.document_id == doc.id,
+                                              DocumentSource.source_file_id == file_id).delete()
+    if doc.source_file_id == file_id:  # the main file: fall back to another attached file, if any
+        rest = db.query(DocumentSource).filter(DocumentSource.document_id == doc.id).order_by(DocumentSource.id).first()
+        doc.source_file_id = rest.source_file_id if rest else None
+        removed = True
+    sf = db.get(SourceFile, file_id)
+    if sf is not None and sf.company_id == doc.company_id and sf.document_id == doc.id:
+        _release_file(db, sf, doc.id, FILE_DETACHED_INFO)
+    if removed:
+        audit.log(db, user_id=ctx.user.id, company_id=doc.company_id, entity="documents", entity_id=doc.id,
+                  action="detach_file", changes={"file": (sf.original_name if sf else file_id, None)})
 
 
 def create_manual(ctx, doc_type: str) -> Document:

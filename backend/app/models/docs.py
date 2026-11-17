@@ -78,7 +78,7 @@ class Document(TimestampMixin, Base):
     confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"))
 
     lines = relationship("DocumentLine", order_by="DocumentLine.position", cascade="all, delete-orphan")
-    allocations = relationship("Allocation", cascade="all, delete-orphan")
+    allocations = relationship("Allocation", order_by="Allocation.id", cascade="all, delete-orphan")
 
 
 class DocumentSource(Base):

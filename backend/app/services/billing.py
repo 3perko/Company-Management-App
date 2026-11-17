@@ -168,12 +168,40 @@ def update_lines(ctx, st: BillingStatement, payload: dict) -> None:
             setattr(st, k, payload[k])
     if "vat_rate" in payload and payload["vat_rate"] not in (None, ""):
         st.vat_rate = Decimal(str(payload["vat_rate"]))
-    company = ctx.db.get(Company, st.company_id)
-    net, vat, gross = _totals([{"amount": ln.amount} for ln in st.lines], Decimal(st.vat_rate), company.vat_payer)
-    st.total_net, st.total_vat, st.total_gross = net, vat, gross
+    _refresh_totals(ctx.db, st)
     audit.log(ctx.db, user_id=ctx.user.id, company_id=ctx.company_id, entity="billing_statements", entity_id=st.id,
               action="update")
     ctx.db.commit()
+
+
+def _refresh_totals(db, st: BillingStatement) -> None:
+    company = db.get(Company, st.company_id)
+    net, vat, gross = _totals([{"amount": ln.amount} for ln in st.lines], Decimal(st.vat_rate), company.vat_payer)
+    st.total_net, st.total_vat, st.total_gross = net, vat, gross
+
+
+def drop_draft_lines(db, *, timesheet_ids=(), allocation_ids=(), trip_ids=(), user_id: int | None = None) -> None:
+    """The given source records are about to be deleted (or replaced): take their lines out of draft statements and
+    recompute the totals, so that a draft never invoices something that no longer exists. Must run before the
+    delete – afterwards the database has already set the link on the line to NULL. Closed statements are not
+    touched here; their items are protected by the 409 guards."""
+    conds = [col.in_(list(ids)) for col, ids in ((BillingStatementLine.timesheet_id, timesheet_ids),
+                                                 (BillingStatementLine.allocation_id, allocation_ids),
+                                                 (BillingStatementLine.trip_id, trip_ids)) if ids]
+    if not conds:
+        return
+    rows = (db.query(BillingStatementLine).join(BillingStatement, BillingStatement.id == BillingStatementLine.statement_id)
+            .filter(BillingStatement.status == "draft", or_(*conds)).all())
+    touched = {}
+    for ln in rows:
+        st = db.get(BillingStatement, ln.statement_id)
+        if ln in st.lines:  # not already removed earlier in this (unflushed) transaction
+            st.lines.remove(ln)
+            touched[st.id] = st
+    for st in touched.values():
+        _refresh_totals(db, st)
+        audit.log(db, user_id=user_id, company_id=st.company_id, entity="billing_statements", entity_id=st.id,
+                  action="update", note="Položka odstránená – zdrojový záznam bol vymazaný alebo zmenený.")
 
 
 def close(ctx, st: BillingStatement) -> None:
@@ -182,13 +210,22 @@ def close(ctx, st: BillingStatement) -> None:
         raise HTTPException(409, "Podklad je už uzavretý.")
     closed = _open_statement_ids(db, st.company_id, exclude=st.id)
     for ln in st.lines:
+        label = ln.description or ln.line_type
+        if ln.line_type in ("hours", "material", "transport") and not (ln.timesheet_id or ln.allocation_id or ln.trip_id):
+            # the source record was deleted (the database cleared the link) – nothing would be marked as billed
+            raise HTTPException(409, f"Položka „{label}“ už nemá zdrojový záznam (bol vymazaný) – odstráňte ju z podkladu.")
         for model, fk in ((TimesheetEntry, ln.timesheet_id), (Allocation, ln.allocation_id), (Trip, ln.trip_id)):
             if fk:
                 obj = db.get(model, fk)
                 if obj is None:
                     continue
                 if obj.billing_statement_id and obj.billing_statement_id in closed:
-                    raise HTTPException(409, f"Položka „{ln.description or ln.line_type}“ je už vyfakturovaná v inom podklade.")
+                    raise HTTPException(409, f"Položka „{label}“ je už vyfakturovaná v inom podklade.")
+                if model is Allocation:
+                    doc = db.get(Document, obj.document_id)
+                    if doc is not None and doc.status != "confirmed":  # returned to review after the draft was made
+                        raise HTTPException(409, f"Doklad k položke „{label}“ nie je potvrdený – potvrďte ho alebo "
+                                                 "položku z podkladu odstráňte.")
                 obj.billing_statement_id = st.id
     st.status = "closed"
     st.closed_at = datetime.now(timezone.utc)
@@ -215,15 +252,17 @@ def reopen(ctx, st: BillingStatement) -> None:
 
 def link_invoice(ctx, st: BillingStatement, document_id: int | None) -> None:
     db = ctx.db
+    doc = None
     if document_id:
         doc = db.get(Document, document_id)
         if not doc or doc.company_id != ctx.company_id or doc.doc_type != "invoice_out":
             raise HTTPException(422, "Vyberte vystavenú faktúru aktívnej firmy.")
-        doc.billing_statement_id = st.id
-    elif st.invoice_document_id:
-        old = db.get(Document, st.invoice_document_id)
-        if old:
+    if st.invoice_document_id and st.invoice_document_id != document_id:
+        old = db.get(Document, st.invoice_document_id)  # unlinked or replaced invoice must not keep pointing here
+        if old and old.billing_statement_id == st.id:
             old.billing_statement_id = None
+    if doc is not None:
+        doc.billing_statement_id = st.id
     st.invoice_document_id = document_id
     audit.log(db, user_id=ctx.user.id, company_id=ctx.company_id, entity="billing_statements", entity_id=st.id,
               action="link_invoice", changes={"invoice_document_id": (None, document_id)})
