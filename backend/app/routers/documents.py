@@ -122,8 +122,11 @@ async def upload(files: list[UploadFile] = File(...), kind: str = Form("auto"), 
         sf, is_new = storage.store_file(ctx.db, company_id=ctx.company_id, name=f.filename or "subor", data=data,
                                         source="upload", kind_hint=kind, physical=physical, user_id=ctx.user.id,
                                         note=note or None)
-        stored.append({"file": sf.original_name, "id": sf.id, "new": is_new, "status": sf.status,
-                       "document_id": sf.document_id})
+        # the same file again: process it once more if its document was deleted in the meantime
+        requeued = not is_new and ingest.requeue_if_orphaned(
+            ctx.db, sf, kind_hint=kind, physical=physical, note=note or None, user_id=ctx.user.id)
+        stored.append({"file": f.filename or sf.original_name, "id": sf.id, "new": is_new, "requeued": requeued,
+                       "status": sf.status, "document_id": sf.document_id})
     ctx.db.commit()
     results = ingest.process_pending(ctx.db, ctx.company_id) if process else []
     return {"stored": stored, "results": results}

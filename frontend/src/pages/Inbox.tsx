@@ -7,11 +7,12 @@ import { DataTable } from "@/components/DataTable";
 import { Card, PageHeader, Spinner, useToast } from "@/components/ui";
 
 interface UploadResult {
-  stored: { file: string; new: boolean; document_id: number | null }[];
+  stored: { file: string; new: boolean; requeued?: boolean; document_id: number | null }[];
   results: { file: string; status: string; document_id?: number; info?: string; source?: string }[];
 }
 
 const STATUS: Record<string, string> = { processed: "spracované", duplicate: "duplicita", error: "chyba" };
+const isKnown = (s: UploadResult["stored"][number]) => !s.new && !s.requeued;
 
 export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: string; compact?: boolean; onDone?: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -33,8 +34,11 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
     try {
       const r = await api.upload<UploadResult>("/api/inbox/upload", fd);
       setResult(r);
-      const dup = r.stored.filter((s) => !s.new).length;
-      toast.ok(`Nahraté: ${r.stored.length}${dup ? `, už existujúce súbory: ${dup}` : ""}`);
+      // files already known by hash that were not processed again (they still belong to an existing document)
+      const known = r.stored.filter(isKnown).length;
+      const taken = r.stored.length - known;
+      if (!taken) toast.info(`Nič nové – ${known === 1 ? "súbor už je zaevidovaný" : `súbory už sú zaevidované (${known})`}`);
+      else toast.ok(`Nahraté: ${taken}${known ? `, už zaevidované súbory: ${known}` : ""}`);
       onDone?.();
     } catch (e) {
       toast.error(e);
@@ -73,8 +77,14 @@ export function UploadBox({ kind = "auto", compact = false, onDone }: { kind?: s
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" className="accent-brand-600" checked={physical} onChange={(e) => setPhysical(e.target.checked)} /> sken fyzického originálu</label>
         {!compact && <input className="input w-56 py-1 text-sm" placeholder="Poznámka (napr. zákazka)" value={note} onChange={(e) => setNote(e.target.value)} />}
       </div>
-      {result && result.results.length > 0 && (
+      {result && (result.results.length > 0 || result.stored.some(isKnown)) && (
         <ul className="mt-2 space-y-0.5 text-sm">
+          {result.stored.filter(isKnown).map((s, i) => (
+            <li key={`known-${i}`}>
+              <span className="font-medium">{s.file}</span>: súbor už je zaevidovaný, nič sa nezmenilo
+              {s.document_id && <> – <Link className="link" to={`/doklady/${s.document_id}`}>otvoriť doklad #{s.document_id}</Link></>}
+            </li>
+          ))}
           {result.results.map((r, i) => (
             <li key={i}>
               <span className="font-medium">{r.file}</span>: {STATUS[r.status] ?? r.status}
