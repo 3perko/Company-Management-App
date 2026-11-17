@@ -7,7 +7,7 @@ import { fmtDate, fmtMoney, fmtNum, monthRange } from "@/lib/format";
 import { DataTable } from "@/components/DataTable";
 import { PeriodPicker, type Period } from "@/components/PeriodPicker";
 import { RefSelect } from "@/components/inputs";
-import { Badge, Card, Empty, PageHeader, Spinner, Stat, useConfirm, useToast } from "@/components/ui";
+import { Badge, Card, Empty, MenuButton, PageHeader, Spinner, Stat, useConfirm, useToast } from "@/components/ui";
 
 interface BLine { id?: number; line_type: string; date: string; description: string | null; worker_name?: string | null;
   quantity: number; unit: string; rate: number | null; markup_pct: number | null; amount: number }
@@ -125,9 +125,8 @@ export function BillingDetail() {
       <PageHeader title={<span className="flex items-center gap-2">Podklad č. {s.id} – {s.project_name} <Badge color={draft ? "amber" : "green"}>{draft ? "návrh" : "uzavretý"}</Badge></span>}
         sub={`Obdobie ${fmtDate(s.period_from)} – ${fmtDate(s.period_to)}${s.customer ? ` · odberateľ ${s.customer.name}` : ""}`}
         actions={<>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "pdf" })} target="_blank" rel="noreferrer"><FileDown className="h-4 w-4" /> PDF</a>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "xlsx" })}><FileDown className="h-4 w-4" /> XLSX</a>
-          <a className="btn-secondary" href={linkUrl(`/api/billing/${s.id}/export`, { format: "csv" })}>CSV</a>
+          <MenuButton label="Stiahnuť" icon={<FileDown className="h-4 w-4" />} items={(["pdf", "xlsx", "csv"] as const).map((f) => ({
+            label: f.toUpperCase(), onClick: () => window.open(linkUrl(`/api/billing/${s.id}/export`, { format: f }), f === "pdf" ? "_blank" : "_self") }))} />
           {draft ? <>
             <button className="btn-ghost text-red-600" onClick={async () => {
               if (!(await confirm("Vymazať návrh podkladu?", "Vymazať"))) return;

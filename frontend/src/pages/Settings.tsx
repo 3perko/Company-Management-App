@@ -4,6 +4,8 @@ import { CheckCircle2, Link2, Play, Save, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtDateTime } from "@/lib/format";
+import { useEntityMeta } from "@/components/DataTable";
+import { EntityDrawer } from "@/components/EntityDrawer";
 import { Card, PageHeader, Spinner, useToast } from "@/components/ui";
 import { Link } from "react-router-dom";
 
@@ -102,6 +104,9 @@ export function Integrations() {
   const toast = useToast();
   const qc = useQueryClient();
   const [rid, setRid] = useState("");
+  const [editCompany, setEditCompany] = useState(false);
+  const companyMeta = useEntityMeta("companies");
+  const { companyId } = useAuth();
   const [running, setRunning] = useState(false);
   if (q.isLoading || !q.data) return <Spinner />;
   const d = q.data;
@@ -127,7 +132,7 @@ export function Integrations() {
             <Ok ok={!!d.company.drive_bank_inbox_folder_id}>Drive bankový inbox: {d.company.drive_bank_inbox_folder_id ?? "nenastavený"}</Ok>
             <Ok ok={!!d.company.email_tag_invoices}>E-mail pre faktúry: {d.company.email_tag_invoices ? `${local ?? "meno"}+${d.company.email_tag_invoices}@gmail.com` : "nenastavený"}</Ok>
             <Ok ok={!!d.company.email_tag_bank}>E-mail pre výpisy: {d.company.email_tag_bank ? `${local ?? "meno"}+${d.company.email_tag_bank}@gmail.com` : "nenastavený"}</Ok>
-            <p className="mt-1 text-xs text-slate-500">Priečinky a e-mailové značky nastavíte v <Link className="link" to="/nastavenie/firmy">Nastavenie → Firmy</Link>.</p>
+            <p className="mt-1 text-xs"><button type="button" className="text-brand-600 hover:underline dark:text-brand-100" onClick={() => setEditCompany(true)}>Upraviť priečinky a e-mailové značky tejto firmy →</button></p>
           </div>
           <div className="flex items-center gap-3">
             <button className="btn-secondary btn-sm" disabled={running} onClick={async () => {
@@ -138,7 +143,7 @@ export function Integrations() {
                 await qc.invalidateQueries({ queryKey: ["integrations"] });
               } catch (e) { toast.error(e); } finally { setRunning(false); }
             }}>{running ? <Spinner /> : <Play className="h-3.5 w-3.5" />} Spracovať prijaté súbory teraz</button>
-            <span className="text-xs text-slate-500">Posledné spracovanie: {fmtDateTime(d.inbox_last_run) || "–"}. Automaticky denne podľa parametra „Čas automatického spracovania inboxu“.</span>
+            <span className="text-xs text-slate-500">Posledné spracovanie: {fmtDateTime(d.inbox_last_run) || "–"}. Automaticky každý deň v čase nastavenom v Predvolených hodnotách.</span>
           </div>
         </div>
       </Card>
@@ -162,8 +167,10 @@ export function Integrations() {
       </Card>
       <Card title="Overenie vozidiel">
         <ul className="space-y-1 text-sm">{d.vehicle_checks.map((v) => (
-          <li key={v.service}><Ok ok={v.has_api}>{v.label}: {v.has_api ? "automaticky (API)" : <>odkaz na <a className="link" href={v.url} target="_blank" rel="noreferrer">{v.url}</a></>}</Ok></li>))}</ul>
+          <li key={v.service}><Ok ok={v.has_api}>{v.label}: {v.has_api ? "automaticky" : <>ručne cez <a className="link" href={v.url} target="_blank" rel="noreferrer">{v.url}</a></>}</Ok></li>))}</ul>
+        <p className="mt-2 text-xs"><Link className="link" to="/vozidla/terminy">Prejsť na termíny a overenie vozidiel →</Link></p>
       </Card>
+      {companyMeta.data && companyId && <EntityDrawer meta={companyMeta.data} id={companyId} open={editCompany} onClose={() => setEditCompany(false)} onSaved={() => void qc.invalidateQueries({ queryKey: ["integrations"] })} />}
     </div>
   );
 }

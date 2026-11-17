@@ -41,9 +41,9 @@ function useTheme() {
 
 /** Numbers shown next to menu items; the same query feeds Prehľad. */
 export function useDashboardCounts(enabled: boolean) {
-  const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api.get<{ counts: Record<string, number> }>("/api/dashboard"), enabled, staleTime: 30_000 });
+  const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api.get<{ counts: Record<string, number>; new_files?: number }>("/api/dashboard"), enabled, staleTime: 30_000 });
   const counts = q.data?.counts ?? {};
-  return { counts, review: counts.documents_in_review ?? 0, tasks: Object.values(counts).reduce((s, n) => s + (n || 0), 0) };
+  return { counts, files: (counts.file_errors ?? 0) + (q.data?.new_files ?? 0), review: counts.documents_in_review ?? 0, tasks: Object.values(counts).reduce((s, n) => s + (n || 0), 0) };
 }
 
 export function Layout() {

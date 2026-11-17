@@ -19,11 +19,11 @@ from app.services import calc
 BILLING_TYPES = [("hourly", "Hodinovo – podľa výkazu"), ("fixed", "Pevná cena"), ("combined", "Kombinácia")]
 PROJECT_STATUS = [("planned", "Pripravovaná"), ("in_progress", "Prebiehajúca"), ("finished", "Ukončená")]
 RELATION_TYPES = [("employee", "Zamestnanec"), ("contractor", "Živnostník"), ("other", "Iné")]
-ROLES = [("admin", "Admin / klient"), ("worker", "Pracovník")]
+ROLES = [("admin", "Správca"), ("worker", "Pracovník")]
 DOC_TYPES = [("receipt", "Bloček"), ("invoice_in", "Prijatá faktúra"), ("invoice_out", "Vystavená faktúra")]
 DOC_STATUS = [("review", "Na kontrolu"), ("confirmed", "Potvrdený")]
 PAYMENT_STATUS = [("unpaid", "Neuhradená"), ("partial", "Čiastočne"), ("paid", "Uhradená")]
-EXTRACTION = [("ekasa", "eKasa"), ("claude", "Claude API"), ("pdf_text", "Text z PDF"), ("manual", "Ručne")]
+EXTRACTION = [("ekasa", "eKasa"), ("claude", "Claude (z obrázka)"), ("pdf_text", "Text z PDF"), ("manual", "Ručne")]
 PERIODICITY = [("monthly", "Mesačne"), ("quarterly", "Štvrťročne"), ("yearly", "Ročne")]
 INSURANCE_TYPES = [("pzp", "PZP"), ("havarijne", "Havarijné")]
 PAYMENT_PERIODS = [("annual", "Ročne"), ("semiannual", "Polročne"), ("quarterly", "Štvrťročne"), ("monthly", "Mesačne")]
@@ -34,13 +34,13 @@ CHECK_RESULTS = [("valid", "Platné"), ("invalid", "Neplatné"), ("unknown", "Ne
 TX_TYPES = [("card", "Platba kartou"), ("transfer", "Prevod"), ("fee", "Poplatok"), ("other", "Iné")]
 TX_STATUS = [("unmatched", "Bez dokladu"), ("suggested", "Návrh"), ("matched", "Spárovaný"),
              ("no_document", "Nepotrebuje doklad")]
-RULE_ACTIONS = [("no_document", "Nepotrebuje doklad"), ("suggest_project", "Návrh zákazky"),
-                ("suggest_supplier", "Návrh dodávateľa")]
-FILE_STATUS = [("new", "Nové"), ("processed", "Spracované"), ("duplicate", "Duplicita"), ("error", "Chyba"),
-               ("skipped", "Preskočené")]
-FILE_SOURCES = [("upload", "Nahraté"), ("drive", "Google Drive"), ("email", "E-mail"), ("bank_inbox", "Bankový inbox"),
+RULE_ACTIONS = [("no_document", "Nepotrebuje doklad"), ("suggest_project", "Navrhnúť zákazku"),
+                ("suggest_supplier", "Navrhnúť dodávateľa")]
+FILE_STATUS = [("new", "Čaká"), ("processed", "Spracovaný"), ("duplicate", "Duplicita"), ("error", "Chyba"),
+               ("skipped", "Preskočený")]
+FILE_SOURCES = [("upload", "Nahraté ručne"), ("drive", "Google Drive"), ("email", "E-mail"), ("bank_inbox", "Bankový priečinok"),
                 ("whatsapp", "WhatsApp")]
-KIND_HINTS = [("auto", "Automaticky"), ("receipt", "Bloček"), ("invoice_in", "Prijatá faktúra"),
+KIND_HINTS = [("auto", "Rozpoznať automaticky"), ("receipt", "Bloček"), ("invoice_in", "Prijatá faktúra"),
               ("invoice_out", "Vystavená faktúra"), ("bank", "Bankový výpis")]
 BILLING_STATUS = [("draft", "Návrh"), ("closed", "Uzavretý")]
 COUNTRIES = [("SK", "Slovensko"), ("CZ", "Česko"), ("AT", "Rakúsko"), ("HU", "Maďarsko"), ("PL", "Poľsko"),
@@ -155,7 +155,7 @@ register(Entity(
         F("aliases", "Aliasy", help="Ako zákazku píšu ľudia, oddelené čiarkou (napr. Sikorky, Sikorky RD)."),
         F("customer_id", "Odberateľ", "ref", ref="customers", label_expr=lambda: PCust.name, roles=ADMIN),
         F("status", "Stav", "select", options=PROJECT_STATUS),
-        F("billing_type", "Typ fakturácie", "select", options=BILLING_TYPES, roles=ADMIN),
+        F("billing_type", "Spôsob fakturácie", "select", options=BILLING_TYPES, roles=ADMIN),
         F("cost_budget", "Rozpočet nákladov", "money", roles=ADMIN, aggregate=True),
         F("contract_price", "Zmluvná cena", "money", roles=ADMIN),
         F("default_km_one_way", "Vzdialenosť jedným smerom (km)", "number", aggregate=False),
@@ -205,7 +205,7 @@ register(Entity(
     multiref_save={"company_ids": _worker_companies_save},
     fields=[
         F("name", "Meno", required=True), F("aliases", "Aliasy"),
-        F("relation_type", "Typ vzťahu", "select", options=RELATION_TYPES),
+        F("relation_type", "Vzťah", "select", options=RELATION_TYPES),
         F("ico", "IČO (živnostník)", default_visible=False), F("email", "E-mail", default_visible=False),
         F("phone", "Telefón", default_visible=False),
         F("company_ids", "Firmy", "multiref", ref="companies", attr="companies", sortable=False,
@@ -706,7 +706,7 @@ register(Entity(
 ))
 
 register(Entity(
-    name="source_files", label="Prijaté súbory (inbox)", model=SourceFile, default_sort="created_at:desc",
+    name="source_files", label="Prijaté súbory", model=SourceFile, default_sort="created_at:desc",
     creatable=False, title_field="original_name",
     actions=[Action("reprocess", "Spracovať znova", lambda ctx, ids, payload: __import__(
         "app.services.ingest", fromlist=["x"]).reprocess(ctx, ids))],
@@ -820,7 +820,7 @@ register(Entity(
 # ============================================================================= Audit log
 AU = aliased(User)
 register(Entity(
-    name="audit_log", label="Audit log", model=AuditLog, company_scoped=False,
+    name="audit_log", label="História zmien", model=AuditLog, company_scoped=False,
     base_filter=lambda ctx: or_(AuditLog.company_id.is_(None), AuditLog.company_id == ctx.company_id),
     default_sort="ts:desc", creatable=False, write_roles=(), title_field="id",
     joins=lambda: [(AU, AU.id == AuditLog.user_id)],

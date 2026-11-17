@@ -86,7 +86,7 @@ function MissingReport() {
                   <td className={`td num ${t.amount < 0 ? "text-red-600" : ""}`}>{fmtMoney(t.amount)}</td></tr>))}</tbody></table>
             )}
           </Card>
-          <Card title={`Doklady bez platby (${q.data.documents_without_payment.length})`}>
+          <Card title={`Faktúry bez úhrady (${q.data.documents_without_payment.length})`}>
             {q.data.documents_without_payment.length === 0 ? <Empty>Žiadne neuhradené faktúry.</Empty> : (
               <table className="w-full text-sm"><tbody>{q.data.documents_without_payment.map((d) => (
                 <tr key={d.id}><td className="td">{d.doc_type === "invoice_out" ? "vystavená" : "prijatá"}</td>
@@ -116,6 +116,9 @@ interface TxDetail {
   candidates: { document_id: number; score: number; reason: string; number: string | null; partner_name: string | null; doc_type: string; issue_date: string; total_gross: number }[];
 }
 
+const TX_LABEL: Record<string, string> = { unmatched: "bez dokladu", suggested: "návrh párovania", matched: "spárovaný", no_document: "nepotrebuje doklad" };
+const TX_COLOR: Record<string, "red" | "amber" | "green" | "gray"> = { unmatched: "red", suggested: "amber", matched: "green", no_document: "gray" };
+
 export function BankTransactionDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
@@ -141,11 +144,11 @@ export function BankTransactionDetail() {
   return (
     <div className="space-y-4">
       <Link className="link inline-flex items-center gap-1 text-sm" to="/financie/banka"><ArrowLeft className="h-3 w-3" /> Späť na banku</Link>
-      <PageHeader title={<>{fmtMoney(t.amount)} · {t.counterparty_name || t.message || "pohyb"}</>}
+      <PageHeader title={<span className="flex flex-wrap items-center gap-2">{fmtMoney(t.amount)} · {t.counterparty_name || t.message || "pohyb"} <Badge color={TX_COLOR[t.status] ?? "gray"}>{TX_LABEL[t.status] ?? t.status}</Badge></span>}
         sub={`${fmtDate(t.booking_date)} · VS ${t.vs ?? "–"} · ${t.counterparty_iban ?? ""}`}
         actions={<>
           <button className="btn-secondary" onClick={() => act(() => api.post(`/api/bank/transactions/${id}/no-document`, {}), "Označené – nepotrebuje doklad")}><Ban className="h-4 w-4" /> Nepotrebuje doklad</button>
-          <button className="btn-secondary" onClick={() => act(() => api.post(`/api/bank/transactions/${id}/no-document`, { create_rule: true }), "Označené a uložené ako pravidlo")}>…a uložiť ako pravidlo</button>
+          <button className="btn-secondary" onClick={() => act(() => api.post(`/api/bank/transactions/${id}/no-document`, { create_rule: true }), "Označené a uložené ako pravidlo – podobné pohyby sa nabudúce označia samy")}>…a zapamätať ako pravidlo</button>
         </>} />
       <Card title="Podrobnosti pohybu">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm md:grid-cols-4">

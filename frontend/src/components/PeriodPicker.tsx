@@ -6,23 +6,26 @@ export type Period = { from: string | null; to: string | null };
 export function PeriodPicker({ value, onChange, allowAll = true }: {
   value: Period; onChange: (p: Period) => void; allowAll?: boolean;
 }) {
-  const set = (r: [string, string]) => onChange({ from: r[0], to: r[1] });
+  // the common periods first (one click), exact dates next to them
+  const presets: [string, [string | null, string | null]][] = [["Tento mesiac", monthRange(0)], ["Minulý mesiac", monthRange(-1)], ["Tento rok", yearRange()]];
+  if (allowAll) presets.push(["Celé obdobie", [null, null]]);
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div className="w-36">
-        <label className="label">Od</label>
-        <DateInput value={value.from} onChange={(v) => onChange({ ...value, from: v })} />
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="inline-flex overflow-hidden rounded-md border border-slate-300 dark:border-slate-700" role="group" aria-label="Obdobie">
+        {presets.map(([label, r]) => {
+          const on = (r[0] ?? null) === (value.from ?? null) && (r[1] ?? null) === (value.to ?? null);
+          return (
+            <button key={label} type="button" aria-pressed={on} onClick={() => onChange({ from: r[0], to: r[1] })}
+              className={`border-r border-slate-300 px-2.5 py-1.5 text-sm last:border-r-0 dark:border-slate-700 ${on ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-700/30 dark:text-brand-100" : "bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"}`}>
+              {label}
+            </button>
+          );
+        })}
       </div>
-      <div className="w-36">
-        <label className="label">Do</label>
-        <DateInput value={value.to} onChange={(v) => onChange({ ...value, to: v })} />
-      </div>
-      <div className="flex flex-wrap gap-1 pb-0.5">
-        <button className="btn-secondary btn-sm" onClick={() => set(monthRange(0))}>Tento mesiac</button>
-        <button className="btn-secondary btn-sm" onClick={() => set(monthRange(-1))}>Minulý mesiac</button>
-        <button className="btn-secondary btn-sm" onClick={() => set(yearRange())}>Tento rok</button>
-        {allowAll && <button className="btn-secondary btn-sm" onClick={() => onChange({ from: null, to: null })}>Celé obdobie</button>}
-      </div>
+      <span className="text-xs text-slate-500">alebo od</span>
+      <div className="w-36"><DateInput value={value.from} onChange={(v) => onChange({ ...value, from: v })} /></div>
+      <span className="text-xs text-slate-500">do</span>
+      <div className="w-36"><DateInput value={value.to} onChange={(v) => onChange({ ...value, to: v })} /></div>
     </div>
   );
 }

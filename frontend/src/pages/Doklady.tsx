@@ -29,7 +29,7 @@ export default function Doklady() {
   const nav = useNavigate();
   const add = useAdd();
   const [sub, setSub] = useState<"allocations" | "document_lines">("allocations");
-  const { counts, review } = useDashboardCounts(true);
+  const { files, review } = useDashboardCounts(true);
   const table = TABLES[tab as DocTab];
   return (
     <div>
@@ -42,7 +42,7 @@ export default function Doklady() {
       <Tabs value={tab} onChange={(t) => nav(`/doklady/${t}`)} items={[
         { key: "kontrola", label: "Na kontrolu", count: review }, { key: "blocky", label: "Bločky" }, { key: "prijate", label: "Prijaté faktúry" },
         { key: "vystavene", label: "Vystavené faktúry" }, { key: "vsetky", label: "Všetky" }, { key: "polozky", label: "Položky a priradenia" },
-        { key: "subory", label: "Prijaté súbory", count: (counts.file_errors ?? 0) || null }]} />
+        { key: "subory", label: "Prijaté súbory", count: files || null }]} />
       {table && <DataTable entity="documents" viewKey={table.viewKey} hideCreate fixedFilters={table.filters} initial={table.initial} />}
       {tab === "polozky" && (
         <div>
